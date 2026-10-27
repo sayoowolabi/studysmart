@@ -1,0 +1,17 @@
+{
+    "north-west":  [
+                       "NORTH WEST"
+                   ],
+    "north-central":  [
+                          "NORTH CENTRAL"
+                      ],
+    "south-east":  [
+                       "SOUTH EAST"
+                   ],
+    "south-central":  [
+                          "SOUTH CENTRAL"
+                      ],
+    "central":  [
+                    "CENTRAL"
+                ]
+}

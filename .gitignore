@@ -62,3 +62,4 @@ dist/
 *.dump
 
 AGENTS.md
+/data/raw/

@@ -28,3 +28,4 @@ postgres_data
 postgis_data
 pgadmin_data
 backups
+data/raw

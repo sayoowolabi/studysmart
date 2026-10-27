@@ -4,9 +4,11 @@ StudySmart is an individual Advanced Web Mapping / Location-Based Services unive
 
 ## Current scope
 
-Issue #1 provides a Django project (`studysmart`), an app (`spaces`), a simple page at `/`, and a Docker development environment with PostGIS and pgAdmin4. No study-space models, imports, spatial APIs or Leaflet features are implemented.
+Issue #1 provides a Django project (`studysmart`), an app (`spaces`), a simple page at `/`, and a Docker development environment with PostGIS and pgAdmin4.
 
-Later issues will cover radius searches, nearest-space searches, administrative-area containment/counts, facility filters and administrator CRUD. Unknown facility attributes must remain unknown; source metadata, retrieval dates and licences must be recorded when datasets are introduced.
+Issue #2 adds a shared `StudySpace` model for libraries and cafés, five nullable facility fields, administrative-area multipolygons, repeatable snapshot imports and Django-admin editing. Source metadata, retrieval times, licences and original attributes are preserved. Unknown facilities remain SQL NULL.
+
+Public spatial APIs, map controls and Leaflet features remain for later issues. The home page is still an initial development page, not a study-space search interface.
 
 ## Architecture
 
@@ -119,7 +121,7 @@ docker compose exec web /usr/local/bin/python manage.py test spaces
 (Invoke-WebRequest -UseBasicParsing http://localhost:8000/).StatusCode
 ```
 
-The tests check the home page and template, rejection of an unknown host, GEOS/GDAL loading, a live PostGIS query, and debug/secret environment validation. Database tests create a separate test database and remove it afterwards; they do not delete the application database.
+Tests cover the original environment checks plus models, tri-state facility parsing, seated-café selection, admin permissions/corrections, repeat imports and geometry validation/transformation. Database tests create a separate test database and remove it afterwards; they do not delete the application database. Import tests use clearly fictional fixtures and make no network calls.
 
 To verify the actual application database through Django:
 
@@ -201,8 +203,46 @@ Verified locally with Docker Desktop's Linux engine and Docker Compose:
 
 Initial HTTP probes failed while services were still initialising; subsequent probes passed. Interactive pgAdmin server registration and the PyCharm GUI have not been verified automatically. PyCharm's SDK helper could not resolve the project module during verification; all application checks used the explicitly selected interpreter inside Docker.
 
+## Import study-space data (Issue #2)
+
+Read [data sources and import decisions](docs/data-sources.md) for the schema, exact datasets, licences, download instructions, stable identity mappings and known data-quality limitations. The checked-in `data/source-manifest.json` records the downloaded snapshots; raw downloads are kept in ignored `data/raw/`.
+
+After downloading the manifest's files:
+
+```powershell
+docker compose exec web /usr/local/bin/python manage.py migrate
+docker compose exec web /usr/local/bin/python manage.py import_administrative_areas --repair-invalid --dry-run
+docker compose exec web /usr/local/bin/python manage.py import_administrative_areas --repair-invalid
+docker compose exec web /usr/local/bin/python manage.py import_libraries
+docker compose exec web /usr/local/bin/python manage.py import_cafes
+```
+
+The two invalid source boundaries require the explicit repair flag; repair methods and original validity reasons are recorded. Location imports require the complete area set. Commands accept `--manifest PATH` and `--dry-run`, validate snapshot hashes, report invalid/outside records and never delete missing source records. Reimporting an unchanged snapshot creates no duplicates.
+
+In Django admin, use the category and indoor-seating filters to select cafés with confirmed indoor seats. Unknown-seat cafés remain stored. Editing any facility automatically protects all five facility values from imports and requires evidence notes; source metadata remains read-only. Uncheck the facility lock in a separate save to resume source-owned facility updates.
+
+## Issue #2 verification
+
+Verified locally against PostGIS after applying `spaces.0001_initial`:
+
+| Check | Result |
+| --- | --- |
+| Django checks and migration consistency | No issues; no unrecorded model changes |
+| Automated tests | All 54 passed, including the original 9 environment tests |
+| DCC libraries | 24 library/service source records; all five facility attributes unknown |
+| OSM cafés | 633 named records inside DCC; 408 outside the study area and 49 unnamed records reported/excluded from the 1,090-element snapshot |
+| Café indoor seating | 91 true, 3 false, 539 unknown; the indoor-seat filter selects only the 91 true records |
+| Café outdoor seating | 123 true, 90 false, 420 unknown |
+| Café Wi-Fi | 29 true, 10 false, 594 unknown |
+| Café outlets and laptop permission | Both unknown for all 633 imported cafés |
+| Administrative areas | Five valid 2D EPSG:4326 multipolygons; two explicit source repairs recorded |
+| Spatial indexes | GiST indexes confirmed for points and boundaries |
+| Repeated real imports | Zero creations/updates; all study-space primary keys, source IDs and import timestamps preserved |
+
+These counts describe the recorded snapshots, not live coverage or independently verified venue facilities. The first real boundary import exposed Z ordinates and source self-intersections; handling and tests were updated before the final successful run. A preliminary admin-form test failed because it requested an unlock while expecting protected-field validation; the corrected test and final suite passed.
+
 ## Development and attribution
 
-Follow [AGENTS.md](AGENTS.md). This change is limited to Issue #1; dataset imports, study-space models, facility filters, spatial queries and maps belong to later issues. No datasets have been imported or verified.
+Follow [AGENTS.md](AGENTS.md). Issue #2 is limited to models, snapshot imports and Django administration; public spatial APIs and maps belong to later issues. Imported data is source-reported and has not been independently surveyed.
 
-AI assistance was used for the initial documentation and Issue #1 implementation. The student must review, verify and understand the work, and document assistance according to the module policy.
+AI assistance was used for the initial documentation and Issues #1–2 implementation. The student must review, verify and understand the work, and document assistance according to the module policy.

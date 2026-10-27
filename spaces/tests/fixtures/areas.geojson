@@ -1,0 +1,44 @@
+{
+  "type": "FeatureCollection",
+  "crs": {
+    "type": "name",
+    "properties": {
+      "name": "EPSG:4326"
+    }
+  },
+  "features": [
+    {
+      "type": "Feature",
+      "properties": {
+        "Name": "Fixture Area"
+      },
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [
+          [
+            [
+              -6.4,
+              53.25
+            ],
+            [
+              -6.1,
+              53.25
+            ],
+            [
+              -6.1,
+              53.45
+            ],
+            [
+              -6.4,
+              53.45
+            ],
+            [
+              -6.4,
+              53.25
+            ]
+          ]
+        ]
+      }
+    }
+  ]
+}
