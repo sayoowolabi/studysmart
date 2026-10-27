@@ -1,77 +1,208 @@
 # StudySmart
 
-StudySmart is an individual Advanced Web Mapping / Location-Based Services university project. Its aim is to help students find study spaces in Dublin through an interactive map, spatial searches and facility filters.
+StudySmart is an individual Advanced Web Mapping / Location-Based Services university project to help students find study spaces in Dublin.
 
-## Project status
+## Current scope
 
-The repository is at the initial planning stage. It currently contains project development instructions in [AGENTS.md](AGENTS.md) and a PyCharm sample script (`main.py`). The web application, database, API, data imports and Docker configuration have not been implemented.
+Issue #1 provides a Django project (`studysmart`), an app (`spaces`), a simple page at `/`, and a Docker development environment with PostGIS and pgAdmin4. No study-space models, imports, spatial APIs or Leaflet features are implemented.
 
-The features and architecture below describe the planned application, not working functionality.
+Later issues will cover radius searches, nearest-space searches, administrative-area containment/counts, facility filters and administrator CRUD. Unknown facility attributes must remain unknown; source metadata, retrieval dates and licences must be recorded when datasets are introduced.
 
-## Planned features
-
-- Interactive map of libraries, university study spaces and study-friendly cafes.
-- Search within a radius around a selected point.
-- Find the nearest study spaces with distance information.
-- Filter by space type, Wi-Fi, power outlets and quiet environment where reliable data exists.
-- Authenticated administrator access to create, view, update and delete study spaces.
-- Administrative-area containment searches and counts of study spaces per area.
-
-Live occupancy, reservations, ratings, route optimisation, public user accounts and AI recommendations are outside the agreed MVP.
-
-## Planned technology and architecture
-
-| Component | Technology and responsibility |
-| --- | --- |
-| Frontend | HTML, CSS, JavaScript, Bootstrap 5 and Leaflet with OpenStreetMap base tiles |
-| Application and API | Django, GeoDjango and Django REST Framework |
-| Spatial database | PostgreSQL with PostGIS |
-| Local deployment | Docker Compose with separate Django, PostGIS and pgAdmin4 services |
+## Architecture
 
 ```mermaid
 flowchart LR
-    Browser[Browser: Leaflet map and filters] --> App[Django / GeoDjango REST API]
-    Browser --> Tiles[OpenStreetMap tiles]
-    App --> DB[(PostgreSQL / PostGIS)]
-    Admin[pgAdmin4] --> DB
+    Browser[Browser: localhost:8000] --> Web[Django / GeoDjango]
+    Web --> DB[(PostgreSQL 17 / PostGIS 3.6)]
+    Admin[pgAdmin: localhost:5050] --> DB
+    DB --> Volume[Named PostgreSQL volume]
 ```
 
-Radius, nearest-space and containment queries will run in GeoDjango/PostGIS. Public API access is planned for reads; writes will require authenticated administrator permissions.
+All three services share a dedicated bridge network with an explicit private subnet. Docker DNS resolves the database as `db`; container addresses are not hard-coded. Only the Django and pgAdmin ports are published, both on the host loopback interface. PostgreSQL has no host port.
 
-## Planned data model
+Dependencies are Django 5.2 LTS (which includes GeoDjango), Django REST Framework and Psycopg 3. Python 3.12 and GEOS/GDAL/PROJ run inside the Django container. Compose passes environment variables to Django, so no dotenv package is required. Django's development server is used; this is not a production deployment.
 
-| Model | Intended fields |
+## Prerequisites
+
+- Docker Desktop running **Linux containers**, with its WSL 2 backend recommended on Windows.
+- Docker Compose supporting health-based dependencies.
+- Internet access for the initial image and package downloads.
+- Available host ports 8000 and 5050.
+- A private subnet that does not overlap your local, VPN or other Docker networks.
+
+A host Python installation is not required for the commands below. Run them from the repository root in PowerShell or the PyCharm terminal.
+
+## Environment configuration
+
+For a new checkout only:
+
+```powershell
+Copy-Item .env.example .env
+```
+
+Do not overwrite an existing `.env`. Replace the `change-me` values with unique local secrets before starting. Settings reject missing secrets and the provided placeholders.
+
+| Variable | Purpose |
 | --- | --- |
-| `StudySpace` | Name, type, location (`PointField`, SRID 4326), optional address and description, nullable facility attributes and source metadata |
-| `AdministrativeArea` | Name and polygon or multipolygon boundary |
+| `DJANGO_SECRET_KEY` | Long random Django signing secret |
+| `DJANGO_DEBUG` | Exactly `True` or `False`; defaults to false if absent |
+| `DJANGO_ALLOWED_HOSTS` | Comma-separated hostnames; local defaults exclude wildcards |
+| `POSTGRES_DB` | Database created on first initialisation |
+| `POSTGRES_USER` | Local development database account |
+| `POSTGRES_PASSWORD` | Unique database password |
+| `PGADMIN_DEFAULT_EMAIL` | pgAdmin login email |
+| `PGADMIN_DEFAULT_PASSWORD` | Separate pgAdmin password |
+| `DOCKER_SUBNET` | Dedicated subnet; defaults to `172.30.50.0/24` |
 
-Unknown facility attributes must remain unknown rather than being recorded as false. Data sources, retrieval dates, licences and attribution must be recorded. Authoritative, OpenStreetMap, manually verified and demonstration records must be distinguishable. Imports should be reproducible and idempotent, with explicit coordinate reference system handling and geometry validation.
+A PowerShell 5.1-compatible way to generate one random secret is:
 
-No datasets have been imported or verified yet. Dataset-specific attribution will be added when sources are selected; OpenStreetMap attribution must be displayed when its maps or data are used.
+```powershell
+$generator = [System.Security.Cryptography.RandomNumberGenerator]::Create()
+$secretBytes = New-Object byte[] 48
+$generator.GetBytes($secretBytes)
+[BitConverter]::ToString($secretBytes).Replace('-', '').ToLowerInvariant()
+$generator.Dispose()
+```
 
-## Local setup
+Repeat for each secret and enter the values locally. Do not share the output. Single-quoted values in `.env` preserve literal `$` and `#` characters.
 
-There is no runnable StudySmart application yet. No dependency manifest, Django `manage.py`, Docker Compose file or environment template is currently provided, so installation, migration and startup commands cannot yet be documented or verified.
+`.env` is ignored by Git and excluded from Docker's build context. `.env.example` contains placeholders only. Compose explicitly passes only the environment variables each service needs. Django does not load `.env` directly.
 
-The intended setup will use Docker Engine with Docker Compose. Once the application is scaffolded, this section should include exact commands for:
+## Start the environment
 
-1. Creating local environment configuration from a tracked `.env.example` containing placeholders only.
-2. Building and starting the application and database services.
-3. Applying database migrations and creating an administrator.
-4. Importing the selected spatial datasets.
-5. Opening the map, API and administration interface.
-6. Running checks and tests.
+```powershell
+docker compose config --quiet
+docker compose build web
+docker compose up -d db pgadmin
+docker compose run --rm web /usr/local/bin/python manage.py migrate
+docker compose up -d web
+docker compose ps
+```
 
-Keep credentials and Django secret keys in local environment variables or ignored environment files. Database and pgAdmin services should not be exposed unnecessarily.
+The database health check waits for PostgreSQL to accept TCP connections. Both dependent services wait for that health check. Migrations remain an explicit command, rather than running on every web-server restart.
 
-## Testing and documentation
+Open:
 
-No application tests exist yet, and application startup has not been verified. Planned coverage includes:
+- Django: [http://localhost:8000/](http://localhost:8000/)
+- Django admin: [http://localhost:8000/admin/](http://localhost:8000/admin/)
+- pgAdmin: [http://localhost:5050/](http://localhost:5050/)
 
-- Model and serializer validation, including coordinate and radius bounds.
-- Public read access and administrator-only write permissions.
-- Radius, nearest-space and containment/count queries.
-- Missing coordinates, invalid radii, empty results and unknown facilities.
-- Geometry transformations and repeat imports without duplicates.
+The first image build and pgAdmin initialisation can take several minutes. A running container may not yet be serving HTTP; inspect its logs and retry the page once initialisation completes.
 
-API routes and examples, the implemented schema, screenshots, dataset licences and clean-start verification results will be documented as those parts are implemented.
+Optionally create a Django administrator interactively:
+
+```powershell
+docker compose exec web /usr/local/bin/python manage.py createsuperuser
+```
+
+Django administrator credentials are separate from pgAdmin and database credentials.
+
+In pgAdmin, log in using your local `PGADMIN_DEFAULT_*` values, then register a server:
+
+| Field | Value |
+| --- | --- |
+| Name | StudySmart |
+| Host name/address | `db` |
+| Port | `5432` |
+| Maintenance database | Your `POSTGRES_DB` value |
+| Username/password | Your `POSTGRES_USER` and `POSTGRES_PASSWORD` values |
+
+Inside pgAdmin's container, `localhost` means pgAdmin itself, not PostgreSQL.
+
+## Checks and tests
+
+```powershell
+docker compose exec web /usr/local/bin/python manage.py check --database default
+docker compose exec web /usr/local/bin/python -m pip check
+docker compose exec web /usr/local/bin/python manage.py showmigrations
+docker compose exec web /usr/local/bin/python manage.py test spaces
+(Invoke-WebRequest -UseBasicParsing http://localhost:8000/).StatusCode
+```
+
+The tests check the home page and template, rejection of an unknown host, GEOS/GDAL loading, a live PostGIS query, and debug/secret environment validation. Database tests create a separate test database and remove it afterwards; they do not delete the application database.
+
+To verify the actual application database through Django:
+
+```powershell
+@'
+from django.db import connection
+with connection.cursor() as cursor:
+    cursor.execute("SELECT current_database(), PostGIS_Version()")
+    print(cursor.fetchone())
+'@ | docker compose exec -T web /usr/local/bin/python manage.py shell
+```
+
+The PowerShell here-string avoids nested command-line quoting. You can also enter these statements in an interactive `manage.py shell`.
+
+## Stop, restart and verify persistence
+
+Temporarily stop/start the existing containers:
+
+```powershell
+docker compose stop
+docker compose start
+```
+
+Stop and remove this project's containers and network, retaining the named volumes:
+
+```powershell
+docker compose down
+docker compose up -d
+```
+
+Never add `-v` when retaining database data. PostgreSQL uses `studysmart_postgres_data`; pgAdmin configuration uses `studysmart_pgadmin_data`. Database files are mounted at `/var/lib/postgresql/data` for the selected PostgreSQL 17 image.
+
+To manually verify persistence:
+
+1. Create a Django administrator and confirm login works.
+2. Run `docker compose restart`; confirm login still works.
+3. Run `docker compose down`, then `docker compose up -d`.
+4. Confirm the same login still works and `showmigrations` still lists applied migrations.
+
+Named volumes survive container recreation, but are not backups.
+
+## PyCharm and Docker Desktop
+
+Open the repository in PyCharm and use its terminal for the Compose commands. In editions supporting Docker Compose interpreters, select service `web` and interpreter `/usr/local/bin/python`. Otherwise, keep running management commands in the terminal; installing Windows GDAL libraries is unnecessary.
+
+In Docker Desktop, expand the `studysmart` project to see `web`, `db` and `pgadmin`. Check service logs, database health, published ports and the two named volumes. Use `docker network inspect studysmart_studysmart_network` to verify the configured subnet and membership.
+
+## Troubleshooting and limitations
+
+- **OneDrive:** this checkout is inside OneDrive. Source bind mounts can be slower and reload notifications may be unreliable. If edits are not detected, run `docker compose restart web`. Keep database files in Docker named volumes, not a OneDrive bind mount.
+- **Subnet collision:** choose another unused private CIDR in `DOCKER_SUBNET`. If this project's network already exists, recreate its containers/network with `docker compose down` and `docker compose up -d`, retaining volumes.
+- **Port collision:** stop the conflicting local service or edit the host-side port mapping. Do not stop unrelated containers without checking.
+- **Database credentials:** initialisation variables apply only to an empty database volume. Editing a password in `.env` does not change an existing database role's password.
+- **Development permissions:** Django uses the image's bootstrap PostgreSQL account, which is a superuser. Use a separate restricted application role before deploying beyond local development.
+- **Secrets:** ignored environment files are local plaintext, not encrypted storage. Docker administrators can inspect container environments. Do not share resolved Compose configuration or commit credentials.
+- **Deployment:** local HTTP, optional debug output and `runserver` are for development. Production needs a deployment server, HTTPS, restricted database roles and a security review.
+- **Network isolation:** the dedicated bridge separates this stack from unrelated Compose networks; it is not an air gap and permits outbound traffic.
+- **Image versions:** database and Python tags are versioned but not digest-locked. Do not change PostgreSQL major versions against an existing data volume without a migration/backup plan.
+- **Logs:** use `docker compose logs --tail 50 web db pgadmin` locally, and redact sensitive information before sharing.
+
+## Issue #1 verification
+
+Verified locally with Docker Desktop's Linux engine and Docker Compose:
+
+| Check | Result |
+| --- | --- |
+| Compose configuration and Django image build | Passed |
+| Built-in Django migrations | All 18 applied |
+| Django system check with the default database | No issues |
+| Python dependency check | No broken requirements |
+| Django tests | All 9 passed, including a live PostGIS query |
+| Django connection to application database | Connected to `studysmart`; PostGIS 3.6 available |
+| HTTP smoke checks | Django home page and pgAdmin login returned 200 |
+| Network and volume inspection | Explicit `172.30.50.0/24` bridge; named PostgreSQL volume mounted |
+| pgAdmin network connectivity | Resolved `db` and reached TCP port 5432 |
+| Persistence after restart and container recreation | All 18 migration records, including timestamps, retained the same checksum; migrations were not rerun |
+| Secret handling | `.env` ignored and untracked; absent from the built image |
+| Image runtime user | Unprivileged `django` user |
+
+Initial HTTP probes failed while services were still initialising; subsequent probes passed. Interactive pgAdmin server registration and the PyCharm GUI have not been verified automatically. PyCharm's SDK helper could not resolve the project module during verification; all application checks used the explicitly selected interpreter inside Docker.
+
+## Development and attribution
+
+Follow [AGENTS.md](AGENTS.md). This change is limited to Issue #1; dataset imports, study-space models, facility filters, spatial queries and maps belong to later issues. No datasets have been imported or verified.
+
+AI assistance was used for the initial documentation and Issue #1 implementation. The student must review, verify and understand the work, and document assistance according to the module policy.
