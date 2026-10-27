@@ -1,0 +1,62 @@
+# Python bytecode and tool caches
+__pycache__/
+*.py[cod]
+*$py.class
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.cache/
+
+# Virtual environments
+.venv/
+venv/
+env/
+ENV/
+
+# Local configuration and secrets; keep safe templates trackable
+.env
+.env.*
+!.env.example
+!.env.*.example
+*.pem
+*.key
+
+# IDE and operating system files
+.idea/
+.vscode/
+*.iml
+.DS_Store
+Thumbs.db
+Desktop.ini
+*~
+*.swp
+*.swo
+
+# Test and coverage output
+.coverage
+.coverage.*
+htmlcov/
+coverage.xml
+.tox/
+.nox/
+
+# Python packaging output
+build/
+dist/
+*.egg-info/
+.eggs/
+
+# Django local runtime files; retain source static assets and migrations
+*.log
+*.sqlite3
+*.sqlite3-journal
+/staticfiles/
+/media/
+
+# Local Docker bind mounts and database backups
+/postgres_data/
+/postgis_data/
+/pgadmin_data/
+/backups/
+*.sql.gz
+*.dump
