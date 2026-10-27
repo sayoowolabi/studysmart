@@ -60,3 +60,5 @@ dist/
 /backups/
 *.sql.gz
 *.dump
+
+AGENTS.md
