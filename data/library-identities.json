@@ -1,0 +1,74 @@
+{
+    "ballyfermot-library":  [
+                                "Ballyfermot Library"
+                            ],
+    "ballymun-library":  [
+                             "Ballymun Library"
+                         ],
+    "business-information-centre":  [
+                                        "Business Information Centre"
+                                    ],
+    "cabra-library":  [
+                          "Cabra Library"
+                      ],
+    "central-library":  [
+                            "Central Library"
+                        ],
+    "charleville-mall-library":  [
+                                     "Charleville Mall Library"
+                                 ],
+    "coolock-library":  [
+                            "Coolock Library"
+                        ],
+    "dolphin-s-barn-library":  [
+                                   "Dolphin\u0027s Barn Library"
+                               ],
+    "donaghmede-library":  [
+                               "Donaghmede Library"
+                           ],
+    "drumcondra-library":  [
+                               "Drumcondra Library"
+                           ],
+    "dublin-city-library-and-archive":  [
+                                            "Dublin City Library and Archive"
+                                        ],
+    "finglas-library":  [
+                            "Finglas Library"
+                        ],
+    "inchicore-library":  [
+                              "Inchicore Library"
+                          ],
+    "kevin-street-library":  [
+                                 "Kevin Street Library"
+                             ],
+    "marino-library":  [
+                           "Marino Library"
+                       ],
+    "music-library":  [
+                          "Music Library"
+                      ],
+    "pearse-street-library":  [
+                                  "Pearse Street Library"
+                              ],
+    "pembroke-ballsbridge-library":  [
+                                         "Pembroke (Ballsbridge) Library"
+                                     ],
+    "phibsboro-library":  [
+                              "Phibsboro Library"
+                          ],
+    "raheny-library":  [
+                           "Raheny Library"
+                       ],
+    "rathmines-library":  [
+                              "Rathmines Library"
+                          ],
+    "ringsend-library":  [
+                             "Ringsend Library"
+                         ],
+    "terenure-library":  [
+                             "Terenure Library"
+                         ],
+    "walkinstown-library":  [
+                                "Walkinstown Library"
+                            ]
+}

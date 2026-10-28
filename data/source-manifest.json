@@ -1,0 +1,30 @@
+{
+  "dcc-libraries": {
+    "file": "raw/libraries.csv",
+    "source_url": "https://data.smartdublin.ie/dataset/208ebdaa-93a2-400e-8007-2a75ce8cd13b/resource/73b280a0-6938-4599-9fac-2b8a370ed7fd/download/dublincitylibrarylocation2021.csv",
+    "licence": "Creative Commons Attribution (cc-by; version unspecified by publisher)",
+    "retrieved_at": "2026-10-27T12:14:28.9745962Z",
+    "sha256": "99e54fa651c9697a05e71741e7388b53cab6f3e5240d43f24b857c94f6c8bc08",
+    "source_srid": 4326,
+    "identity_map": "library-identities.json"
+  },
+  "dcc-administrative-areas": {
+    "file": "raw/areas.geojson",
+    "source_url": "https://data.smartdublin.ie/dataset/f058be80-fe31-4fdc-a856-fcda02aeb1a3/resource/13352b23-cc61-495a-9dc7-69416120e04d/download/dcc_5committeeareas_2019_2157.geojson",
+    "licence": "Creative Commons Attribution (cc-by; version unspecified by publisher)",
+    "retrieved_at": "2026-10-27T12:14:28.9745962Z",
+    "sha256": "82e0cbe78ac5815e2bf047850d0a613ab72f6968f76f8e5b4f471bd9941e3b48",
+    "source_srid": 2157,
+    "identity_map": "area-identities.json"
+  },
+  "osm-cafes": {
+    "file": "raw/cafes.json",
+    "source_url": "https://overpass.atownsend.org.uk/api/interpreter",
+    "licence": "Open Database Licence (ODbL) 1.0; OpenStreetMap contributors",
+    "retrieved_at": "2026-10-27T12:23:13.194166+00:00",
+    "sha256": "251e449ff244126b803404c38a2623e59aa920c1eedb27010e850b61088ef8f4",
+    "source_srid": 4326,
+    "query": "[out:json][timeout:25];nwr[\"amenity\"=\"cafe\"](53.2,-6.5,53.5,-5.9);out center;",
+    "osm_base_timestamp": "2026-10-27T12:20:08Z"
+  }
+}

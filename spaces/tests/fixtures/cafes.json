@@ -1,0 +1,99 @@
+{
+  "version": 0.6,
+  "osm3s": {
+    "timestamp_osm_base": "2026-01-01T00:00:00Z"
+  },
+  "elements": [
+    {
+      "type": "node",
+      "id": 1,
+      "lat": 53.35,
+      "lon": -6.26,
+      "tags": {
+        "amenity": "cafe",
+        "name": "Fictional Indoor Cafe",
+        "indoor_seating": "yes",
+        "outdoor_seating": "no",
+        "internet_access": "wlan",
+        "laptop": "yes"
+      }
+    },
+    {
+      "type": "node",
+      "id": 2,
+      "lat": 53.35,
+      "lon": -6.27,
+      "tags": {
+        "amenity": "cafe",
+        "name": "Fictional Unknown Cafe"
+      }
+    },
+    {
+      "type": "node",
+      "id": 3,
+      "lat": 53.35,
+      "lon": -6.28,
+      "tags": {
+        "amenity": "cafe",
+        "name": "Fictional Outdoor Cafe",
+        "indoor_seating": "no",
+        "outdoor_seating": "yes"
+      }
+    },
+    {
+      "type": "way",
+      "id": 1,
+      "center": {
+        "lat": 53.36,
+        "lon": -6.26
+      },
+      "tags": {
+        "amenity": "cafe",
+        "name": "Fictional Way Cafe",
+        "indoor_seating": "yes"
+      }
+    },
+    {
+      "type": "relation",
+      "id": 1,
+      "center": {
+        "lat": 53.37,
+        "lon": -6.26
+      },
+      "tags": {
+        "amenity": "cafe",
+        "name": "Fictional Relation Cafe"
+      }
+    },
+    {
+      "type": "node",
+      "id": 4,
+      "lat": 54,
+      "lon": -8,
+      "tags": {
+        "amenity": "cafe",
+        "name": "Fictional Outside Cafe",
+        "indoor_seating": "yes"
+      }
+    },
+    {
+      "type": "node",
+      "id": 5,
+      "lat": 53.35,
+      "lon": -6.26,
+      "tags": {
+        "amenity": "cafe"
+      }
+    },
+    {
+      "type": "node",
+      "id": 2,
+      "lat": 53.35,
+      "lon": -6.27,
+      "tags": {
+        "amenity": "cafe",
+        "name": "Fictional Unknown Cafe"
+      }
+    }
+  ]
+}
