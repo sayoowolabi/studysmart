@@ -1,0 +1,164 @@
+"""Spatial API tests with fictional points and squares whose distances are known.
+
+Along a meridian, 0.01 degrees of latitude is about 1,112 m (2*pi*R/36,000 with
+R of about 6,371 km), and 0.005 degrees is about 556 m.
+"""
+from django.contrib.gis.geos import MultiPolygon, Point, Polygon
+from django.urls import reverse
+from rest_framework.test import APITestCase
+
+from spaces.models import AdministrativeArea, StudySpace
+
+NEARBY_URL = reverse("spaces:studyspace-nearby")
+NEAREST_URL = reverse("spaces:studyspace-nearest")
+COVERAGE_URL = reverse("spaces:area-coverage")
+
+ORIGIN_LAT, ORIGIN_LNG = 53.35, -6.26
+
+
+def make_space(name, latitude, longitude=ORIGIN_LNG, **overrides):
+    values = {
+        "name": name, "space_type": "cafe",
+        "location": Point(longitude, latitude, srid=4326),
+    }
+    values.update(overrides)
+    return StudySpace.objects.create(**values)
+
+
+def make_area(name, bbox):
+    square = Polygon.from_bbox(bbox)
+    square.srid = 4326
+    return AdministrativeArea.objects.create(
+        name=name, source_id=name.lower(), boundary=MultiPolygon(square, srid=4326),
+    )
+
+
+def search(url, **params):
+    params = {"lat": ORIGIN_LAT, "lng": ORIGIN_LNG, **params}
+    return url + "?" + "&".join(f"{key}={value}" for key, value in params.items())
+
+
+class NearbyTests(APITestCase):
+    def setUp(self):
+        make_space("Origin Library", ORIGIN_LAT, space_type="library")
+        make_space("Unknown-Seat Cafe", ORIGIN_LAT + 0.005)
+        make_space("Seated Cafe", ORIGIN_LAT + 0.01, indoor_seating=True)
+
+    def test_results_are_ordered_with_distances_in_metres(self):
+        with self.assertNumQueries(1):
+            response = self.client.get(search(NEARBY_URL, radius=2000))
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(
+            [item["name"] for item in response.data],
+            ["Origin Library", "Unknown-Seat Cafe", "Seated Cafe"],
+        )
+        for item, expected in zip(response.data, (0, 556, 1112)):
+            self.assertAlmostEqual(item["distance_m"], expected, delta=1)
+
+    def test_radius_edge(self):
+        names = lambda radius: [i["name"] for i in self.client.get(search(NEARBY_URL, radius=radius)).data]
+        self.assertNotIn("Seated Cafe", names(1100))
+        self.assertIn("Seated Cafe", names(1120))
+
+    def test_type_and_confirmed_indoor_seating_filters(self):
+        response = self.client.get(search(NEARBY_URL, radius=2000, type="cafe", indoor_seating="true"))
+        self.assertEqual([item["name"] for item in response.data], ["Seated Cafe"])
+
+    def test_no_matches_returns_empty_list(self):
+        response = self.client.get(search(NEARBY_URL, lat=53.0, radius=1000))
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.data, [])
+
+    def test_invalid_parameters_are_rejected(self):
+        for params, field in (
+            ({"lat": 91, "radius": 100}, "lat"),
+            ({"lng": -181, "radius": 100}, "lng"),
+            ({"lat": "north", "radius": 100}, "lat"),
+            ({"lat": "nan", "radius": 100}, "lat"),
+            ({"lng": "inf", "radius": 100}, "lng"),
+            ({"radius": 0}, "radius"),
+            ({"radius": -5}, "radius"),
+            ({"radius": 10001}, "radius"),
+            ({"radius": "nan"}, "radius"),
+            ({}, "radius"),
+        ):
+            with self.subTest(params=params):
+                response = self.client.get(search(NEARBY_URL, **params))
+                self.assertEqual(response.status_code, 400)
+                self.assertIn(field, response.data)
+
+    def test_missing_coordinates_and_invalid_filters_are_rejected(self):
+        response = self.client.get(NEARBY_URL + "?radius=100")
+        self.assertEqual(response.status_code, 400)
+        self.assertIn("lat", response.data)
+        self.assertIn("lng", response.data)
+        response = self.client.get(search(NEARBY_URL, radius=100, indoor_seating="maybe"))
+        self.assertEqual(response.status_code, 400)
+
+
+class NearestTests(APITestCase):
+    def setUp(self):
+        make_space("Unknown-Seat Cafe", ORIGIN_LAT + 0.005)
+        make_space("Seated Cafe", ORIGIN_LAT + 0.01, indoor_seating=True)
+
+    def test_nearest_with_distance(self):
+        with self.assertNumQueries(1):
+            response = self.client.get(search(NEAREST_URL))
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.data["name"], "Unknown-Seat Cafe")
+        self.assertAlmostEqual(response.data["distance_m"], 556, delta=1)
+
+    def test_filters_apply_before_choosing_nearest(self):
+        response = self.client.get(search(NEAREST_URL, indoor_seating="true"))
+        self.assertEqual(response.data["name"], "Seated Cafe")
+        self.assertAlmostEqual(response.data["distance_m"], 1112, delta=1)
+
+    def test_no_match_returns_404(self):
+        response = self.client.get(search(NEAREST_URL, type="library"))
+        self.assertEqual(response.status_code, 404)
+        self.assertIn("detail", response.data)
+
+    def test_invalid_coordinates_are_rejected(self):
+        self.assertEqual(self.client.get(search(NEAREST_URL, lat=-90.1)).status_code, 400)
+
+
+class CoverageTests(APITestCase):
+    def setUp(self):
+        # Two fictional squares sharing the edge at longitude -6.25.
+        make_area("West", (-6.30, 53.30, -6.25, 53.40))
+        make_area("East", (-6.25, 53.30, -6.20, 53.40))
+        make_space("West Library", 53.35, -6.28, space_type="library")
+        make_space("West Cafe", 53.35, -6.27)
+        make_space("East Cafe", 53.35, -6.22)
+        make_space("Border Cafe", 53.35, -6.25)
+        make_space("Outside Cafe", 53.35, -6.10)
+
+    def test_counts_per_area(self):
+        with self.assertNumQueries(3):  # one for the area list, one count per area
+            response = self.client.get(COVERAGE_URL)
+        self.assertEqual(response.status_code, 200)
+        counts = {
+            area["name"]: (area["library_count"], area["cafe_count"], area["total_count"])
+            for area in response.data
+        }
+        # The border café is covered by both squares; the outside café by neither.
+        self.assertEqual(counts, {"West": (1, 2, 3), "East": (0, 2, 2)})
+        self.assertEqual([area["name"] for area in response.data], ["East", "West"])
+        self.assertEqual(
+            set(response.data[0]),
+            {"id", "source_id", "name", "library_count", "cafe_count", "total_count"},
+        )
+
+    def test_area_without_spaces_has_zero_counts(self):
+        make_area("Empty", (-5.0, 53.0, -4.9, 53.1))
+        empty = next(a for a in self.client.get(COVERAGE_URL).data if a["name"] == "Empty")
+        self.assertEqual((empty["library_count"], empty["cafe_count"], empty["total_count"]), (0, 0, 0))
+
+    def test_no_areas_returns_empty_list(self):
+        AdministrativeArea.objects.all().delete()
+        response = self.client.get(COVERAGE_URL)
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.data, [])
+
+    def test_coverage_is_read_only(self):
+        self.assertEqual(self.client.post(COVERAGE_URL, {}).status_code, 405)

@@ -1,9 +1,17 @@
 from django.shortcuts import render
 from rest_framework import status, viewsets
-from rest_framework.exceptions import APIException, ValidationError
+from rest_framework.decorators import action
+from rest_framework.exceptions import APIException, NotFound, ValidationError
+from rest_framework.permissions import AllowAny
+from rest_framework.response import Response
+from rest_framework.views import APIView
 
 from .models import FACILITY_FIELDS, StudySpace
-from .serializers import StudySpaceSerializer
+from .serializers import (
+    NearbyQuerySerializer, PointQuerySerializer, StudySpaceDistanceSerializer,
+    StudySpaceSerializer,
+)
+from .spatial import area_coverage, nearest_space, search_point, spaces_within
 
 # "unknown" matches SQL NULL, so unknown facilities are never treated as true or false.
 FACILITY_FILTER_VALUES = {"true": True, "false": False, "unknown": None}
@@ -53,7 +61,7 @@ class StudySpaceViewSet(viewsets.ModelViewSet):
 
     def get_queryset(self):
         queryset = super().get_queryset()
-        if self.action == "list":
+        if self.action in {"list", "nearby", "nearest"}:
             queryset = filter_study_spaces(queryset, self.request.query_params)
         return queryset
 
@@ -61,3 +69,35 @@ class StudySpaceViewSet(viewsets.ModelViewSet):
         if instance.is_imported:
             raise ImportedRecordConflict()
         instance.delete()
+
+    def validated_query(self, serializer_class):
+        query = serializer_class(data=self.request.query_params)
+        query.is_valid(raise_exception=True)
+        return query.validated_data
+
+    @action(detail=False)
+    def nearby(self, request):
+        """GET /api/spaces/nearby/?lat=&lng=&radius= (metres), nearest first."""
+        query = self.validated_query(NearbyQuerySerializer)
+        point = search_point(query["lat"], query["lng"])
+        spaces = spaces_within(self.get_queryset(), point, query["radius"])
+        return Response(StudySpaceDistanceSerializer(spaces, many=True).data)
+
+    @action(detail=False)
+    def nearest(self, request):
+        """GET /api/spaces/nearest/?lat=&lng= for the closest space matching the filters."""
+        query = self.validated_query(PointQuerySerializer)
+        space = nearest_space(self.get_queryset(), search_point(query["lat"], query["lng"]))
+        if space is None:
+            raise NotFound("No study space matches these filters.")
+        return Response(StudySpaceDistanceSerializer(space).data)
+
+
+class AreaCoverageView(APIView):
+    """GET /api/areas/coverage/: library and café counts per administrative area."""
+
+    # Set explicitly: the default model-permission class needs a queryset. GET is the only method.
+    permission_classes = [AllowAny]
+
+    def get(self, request):
+        return Response(area_coverage())
