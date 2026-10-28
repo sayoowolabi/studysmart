@@ -87,6 +87,11 @@ class StudySpace(SourceRecord):
             ),
         ]
 
+    @property
+    def is_imported(self):
+        # Import commands own these records and recreate or overwrite them on re-import.
+        return self.source_kind in {self.SourceKind.OFFICIAL, self.SourceKind.OSM}
+
     def clean(self):
         super().clean()
         if self.facility_import_locked and not self.facility_verification_notes.strip():

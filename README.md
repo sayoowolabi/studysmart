@@ -8,7 +8,9 @@ Issue #1 provides a Django project (`studysmart`), an app (`spaces`), a simple p
 
 Issue #2 adds a shared `StudySpace` model for libraries and cafés, five nullable facility fields, administrative-area multipolygons, repeatable snapshot imports and Django-admin editing. Source metadata, retrieval times, licences and original attributes are preserved. Unknown facilities remain SQL NULL.
 
-Public spatial APIs, map controls and Leaflet features remain for later issues. The home page is still an initial development page, not a study-space search interface.
+Issue #3 adds a study-space CRUD REST API at `/api/spaces/` with public read access, model-permission-controlled writes and type/facility filters.
+
+Spatial search APIs, map controls and Leaflet features remain for later issues. The home page is still an initial development page, not a study-space search interface.
 
 ## Architecture
 
@@ -241,8 +243,84 @@ Verified locally against PostGIS after applying `spaces.0001_initial`:
 
 These counts describe the recorded snapshots, not live coverage or independently verified venue facilities. The first real boundary import exposed Z ordinates and source self-intersections; handling and tests were updated before the final successful run. A preliminary admin-form test failed because it requested an unlock while expecting protected-field validation; the corrected test and final suite passed.
 
+## Study-space REST API (Issue #3)
+
+| Method | Endpoint | Access | Success |
+| --- | --- | --- | --- |
+| GET | `/api/spaces/` | Public | 200, JSON list |
+| GET | `/api/spaces/{id}/` | Public | 200 |
+| POST | `/api/spaces/` | `spaces.add_studyspace` permission | 201 |
+| PATCH | `/api/spaces/{id}/` | `spaces.change_studyspace` permission | 200 |
+| DELETE | `/api/spaces/{id}/` | `spaces.delete_studyspace` permission | 204 |
+
+PUT is not offered (405); use PATCH. Superusers hold all three permissions. Authentication uses the Django session from logging in at `/admin/`, so writes also need a CSRF token; the browsable API at `/api/spaces/` handles this automatically. HTTP Basic authentication is disabled because this development server uses plain HTTP.
+
+### Fields
+
+Requests and responses use `latitude`/`longitude` in EPSG:4326 degrees; the server stores them as a PostGIS `Point(longitude, latitude)`.
+
+| Field | Write rules |
+| --- | --- |
+| `name`, `space_type` (`library`/`cafe`), `latitude` (−90..90), `longitude` (−180..180) | Required on create |
+| `address`, `description` | Optional text |
+| `indoor_seating`, `outdoor_seating`, `has_wifi`, `has_outlets`, `laptop_allowed` | `true`, `false` or `null` (unknown, the default) |
+| `facility_verification_notes` | Required whenever a facility value is set or changed |
+| `id`, `location_method`, `facility_import_locked`, `facility_verified_at`, `source_*`, `imported_at` | Read-only |
+
+Raw `source_attributes` are not exposed. Source URL, licence and kind remain in every record for attribution.
+
+### Filters (list only)
+
+| Parameter | Values |
+| --- | --- |
+| `type` | `library`, `cafe` |
+| `indoor_seating`, `outdoor_seating`, `has_wifi`, `has_outlets`, `laptop_allowed` | `true`, `false`, `unknown` (case-insensitive) |
+
+Filters combine with AND. `true` matches only confirmed values, so `/api/spaces/?type=cafe&indoor_seating=true` excludes cafés with false or unknown seating. `unknown` matches SQL NULL. Any other value returns 400. Results are not paginated and seating values are source-reported, not live occupancy.
+
+### Data-integrity rules
+
+- Setting or changing any facility through the API behaves like the Django admin: all five facility values are protected from future imports, the verification time is recorded and evidence notes are required.
+- For imported records (`source_kind` `official` or `osm`), changes to `name`, `space_type`, location, `address` or `description` return 400, because the next import would overwrite them. Correct these in the source data instead.
+- Imported records cannot be deleted (409 Conflict), because the next import would recreate them. Manually created records can be edited and deleted normally. API-created records are always `source_kind=manual`.
+- Validation reuses the model's own checks (`full_clean()`), including the finite-coordinate validator, so API, admin and import rules match.
+
+### Status codes and errors
+
+| Code | Meaning |
+| --- | --- |
+| 400 | Validation error, as `{"field": ["message"]}` |
+| 403 | Not logged in, missing model permission or missing CSRF token |
+| 404 | No study space with that ID |
+| 405 | Unsupported method (PUT) |
+| 409 | Attempt to delete an imported record |
+
+### Manual check
+
+```powershell
+# Public reads (no login)
+Invoke-RestMethod "http://localhost:8000/api/spaces/?type=cafe&indoor_seating=true" | Measure-Object
+Invoke-WebRequest -UseBasicParsing "http://localhost:8000/api/spaces/?indoor_seating=maybe"   # 400
+Invoke-WebRequest -UseBasicParsing -Method Post "http://localhost:8000/api/spaces/" -ContentType "application/json" -Body '{}'   # 403
+```
+
+For writes, log in at `/admin/`, open `/api/spaces/` and use the browsable API's form. Then check:
+
+- A record with latitude 91 is rejected.
+- A valid record can be created, PATCHed and deleted.
+- DELETE on an imported café returns 409.
+
+## Issue #3 verification
+
+| Check | Result |
+| --- | --- |
+| Django system check and `makemigrations --check` | No issues; no model changes requiring migrations |
+| Automated tests | All 70 passed: 54 existing plus 16 API tests |
+| Confirmed indoor-seat café filter on imported data | 91 records over HTTP, matching the Issue #2 count |
+| Invalid filter value / anonymous POST over HTTP | 400 / 403 |
+
 ## Development and attribution
 
-Follow [AGENTS.md](AGENTS.md). Issue #2 is limited to models, snapshot imports and Django administration; public spatial APIs and maps belong to later issues. Imported data is source-reported and has not been independently surveyed.
+Follow [AGENTS.md](AGENTS.md). Issue #3 is limited to the study-space CRUD API; spatial search endpoints and maps belong to later issues. Imported data is source-reported and has not been independently surveyed.
 
-AI assistance was used for the initial documentation and Issues #1–2 implementation. The student must review, verify and understand the work, and document assistance according to the module policy.
+AI assistance was used for the initial documentation and Issues #1–3 implementation. The student must review, verify and understand the work, and document assistance according to the module policy.
