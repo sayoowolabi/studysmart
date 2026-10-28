@@ -3,7 +3,7 @@ from django.contrib import admin
 from django.contrib.gis.admin import GISModelAdmin
 from django.utils import timezone
 
-from .models import AdministrativeArea, FACILITY_FIELDS, StudySpace
+from .models import AdministrativeArea, FACILITY_FIELDS, SOURCE_OWNED_FIELDS, StudySpace
 
 
 class StudySpaceAdminForm(forms.ModelForm):
@@ -33,6 +33,12 @@ class StudySpaceAdmin(GISModelAdmin):
     list_filter = ("space_type", *FACILITY_FIELDS, "facility_import_locked", "source_kind")
     search_fields = ("name", "address", "source_id")
     readonly_fields = (*SOURCE_READONLY, "location_method", "facility_verified_at")
+
+    def get_readonly_fields(self, request, obj=None):
+        # Matches the API: the next import would silently overwrite these edits.
+        if obj is not None and obj.is_imported:
+            return (*self.readonly_fields, *SOURCE_OWNED_FIELDS)
+        return self.readonly_fields
 
     def save_model(self, request, obj, form, change):
         facility_edits = any(field in form.changed_data for field in FACILITY_FIELDS)

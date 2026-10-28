@@ -8,6 +8,8 @@ from .validators import validate_boundary, validate_point
 FACILITY_FIELDS = (
     "indoor_seating", "outdoor_seating", "has_wifi", "has_outlets", "laptop_allowed",
 )
+# Imports overwrite these fields, so manual edits to imported records would be lost.
+SOURCE_OWNED_FIELDS = ("name", "space_type", "location", "address", "description")
 
 
 class SourceRecord(models.Model):

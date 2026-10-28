@@ -7,10 +7,7 @@ from django.core.exceptions import ValidationError as DjangoValidationError
 from django.utils import timezone
 from rest_framework import serializers
 
-from .models import FACILITY_FIELDS, StudySpace
-
-# Imports overwrite these fields, so API edits to imported records would be lost.
-SOURCE_OWNED_FIELDS = ("name", "space_type", "location", "address", "description")
+from .models import FACILITY_FIELDS, SOURCE_OWNED_FIELDS, StudySpace
 
 
 class StudySpaceSerializer(serializers.ModelSerializer):

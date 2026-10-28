@@ -124,6 +124,14 @@ class AdminTests(TestCase):
         for field in ("source_id", "source_attributes", "source_retrieved_at"):
             self.assertIn(field, admin.get_readonly_fields(None))
 
+    def test_import_owned_fields_are_read_only_for_imported_records(self):
+        admin = StudySpaceAdmin(StudySpace, AdminSite())
+        imported = make_space(source_dataset="osm-cafes", source_id="node/1", source_kind="osm")
+        for field in ("name", "space_type", "location", "address", "description"):
+            self.assertIn(field, admin.get_readonly_fields(None, imported))
+            self.assertNotIn(field, admin.get_readonly_fields(None, make_space()))
+        self.assertNotIn("indoor_seating", admin.get_readonly_fields(None, imported))
+
     def test_admin_pages_require_login_and_model_permissions(self):
         url = reverse("admin:spaces_studyspace_changelist")
         self.assertEqual(self.client.get(url).status_code, 302)

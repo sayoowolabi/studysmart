@@ -125,7 +125,17 @@ docker compose exec web /usr/local/bin/python manage.py test spaces
 (Invoke-WebRequest -UseBasicParsing http://localhost:8000/).StatusCode
 ```
 
-Tests cover the original environment checks plus models, tri-state facility parsing, seated-café selection, admin permissions/corrections, repeat imports and geometry validation/transformation. Database tests create a separate test database and remove it afterwards; they do not delete the application database. Import tests use clearly fictional fixtures and make no network calls.
+Tests cover:
+
+- environment checks
+- models and tri-state facility parsing
+- seated-café selection
+- admin permissions and corrections
+- repeat imports and geometry validation/transformation
+- the CRUD API (permissions, validation, filters, imported-record protection)
+- spatial searches using known geometries
+
+Database tests create a separate test database and remove it afterwards; they do not delete the application database. Import tests use clearly fictional fixtures and make no network calls.
 
 To verify the actual application database through Django:
 
@@ -209,9 +219,9 @@ Initial HTTP probes failed while services were still initialising; subsequent pr
 
 ## Import study-space data (Issue #2)
 
-Read [data sources and import decisions](docs/data-sources.md) for the schema, exact datasets, licences, download instructions, stable identity mappings and known data-quality limitations. The checked-in `data/source-manifest.json` records the downloaded snapshots; raw downloads are kept in ignored `data/raw/`.
+Read [data sources and import decisions](docs/data-sources.md) for the schema, exact datasets, licences, download instructions, stable identity mappings and known data-quality limitations. The exact source snapshots used for the recorded imports are committed in `data/raw/`, with their checksums, licences and retrieval times in `data/source-manifest.json`. A fresh clone can therefore reproduce the same import without downloading anything. Git stores these files byte-for-byte (`.gitattributes`), so their checksums match on every platform.
 
-After downloading the manifest's files:
+To import:
 
 ```powershell
 docker compose exec web /usr/local/bin/python manage.py migrate
@@ -223,7 +233,7 @@ docker compose exec web /usr/local/bin/python manage.py import_cafes
 
 The two invalid source boundaries require the explicit repair flag; repair methods and original validity reasons are recorded. Location imports require the complete area set. Commands accept `--manifest PATH` and `--dry-run`, validate snapshot hashes, report invalid/outside records and never delete missing source records. Reimporting an unchanged snapshot creates no duplicates.
 
-In Django admin, use the category and indoor-seating filters to select cafés with confirmed indoor seats. Unknown-seat cafés remain stored. Editing any facility automatically protects all five facility values from imports and requires evidence notes; source metadata remains read-only. Uncheck the facility lock in a separate save to resume source-owned facility updates.
+In Django admin, use the category and indoor-seating filters to select cafés with confirmed indoor seats. Unknown-seat cafés remain stored. Editing any facility automatically protects all five facility values from imports and requires evidence notes; source metadata remains read-only. For imported records, name, type, location, address and description are also read-only, matching the API, because the next import would overwrite them. Uncheck the facility lock in a separate save to resume source-owned facility updates.
 
 ## Issue #2 verification
 
