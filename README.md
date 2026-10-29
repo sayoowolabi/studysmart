@@ -12,7 +12,9 @@ Issue #3 adds a study-space CRUD REST API at `/api/spaces/` with public read acc
 
 Issue #4 adds PostGIS-backed nearby and nearest searches and per-area library/café counts.
 
-Map controls and Leaflet features remain for later issues. The home page is still an initial development page, not a study-space search interface.
+Issue #5 replaces the development home page with an interactive Leaflet map of all libraries and cafés, loaded from the REST API, and adds a read-only `/api/areas/` GeoJSON endpoint for an optional boundary overlay. Search and filter controls are planned for Issue #6.
+
+StudySmart covers two categories only: libraries and cafés. University study spaces, mentioned in an early Issue #5 task, are out of scope; the model and migrations are unchanged.
 
 ## Architecture
 
@@ -134,6 +136,7 @@ Tests cover:
 - repeat imports and geometry validation/transformation
 - the CRUD API (permissions, validation, filters, imported-record protection)
 - spatial searches using known geometries
+- the boundary GeoJSON endpoint and the map page (API URLs, static assets, pinned CDN hashes, attribution)
 
 Database tests create a separate test database and remove it afterwards; they do not delete the application database. Import tests use clearly fictional fixtures and make no network calls.
 
@@ -406,8 +409,74 @@ docker compose exec web /usr/local/bin/python manage.py shell -c "from spaces.mo
 | Coverage on imported data | Central 200, North Central 52, North West 12, South Central 86, South East 307; total 657, equal to all imported records |
 | HTTP smoke checks | Filtered nearby search 200 (12 confirmed-seat cafés within 300 m of the test point); nearest library 200; radius 0 → 400 |
 
+## Interactive map (Issue #5)
+
+Open [http://localhost:8000/](http://localhost:8000/). The page loads every study space from `/api/spaces/` in one request and shows:
+
+- **Libraries** as blue squares marked "L" and **cafés** as orange circles marked "C". Shape and letter differ as well as colour. Libraries are drawn above cafés so they are not hidden in the dense city centre. The legend shows how many of each were loaded.
+- A **popup** for each marker with the name, type, address and the five facilities. `true` shows "Yes", `false` "No" and `null` "Unknown"; unknown is never shown as confirmed. Popups state that facilities are source-reported, not live availability, and name the record's source and licence.
+- An **Area boundaries** outline layer, off by default, toggled from the layer control (top right). Hovering a boundary shows the area name.
+- A **selected search location**: clicking the map places one temporary marker and shows its coordinates; Clear removes it. No search runs yet (Issue #6).
+- **Status messages** while loading, when no study spaces exist, and when either API request fails. A boundary failure does not affect the markers.
+
+### Implementation
+
+| File | Role |
+| --- | --- |
+| [spaces/templates/spaces/home.html](spaces/templates/spaces/home.html) | Bootstrap layout, map container, legend, selection panel. API URLs come from `{% url %}` as `data-` attributes, so the JavaScript does not hard-code paths. |
+| [spaces/static/spaces/js/map.js](spaces/static/spaces/js/map.js) | Leaflet setup, API requests, markers, popups, boundary overlay and location selection |
+| [spaces/static/spaces/css/map.css](spaces/static/spaces/css/map.css) | Full-height responsive layout, marker and popup styles |
+
+Leaflet 1.9.4 and Bootstrap 5.3.3 (CSS only) load from public CDNs at pinned versions with Subresource Integrity hashes, so the browser refuses a modified file. No build step, API key or paid tile service is used. Base tiles come from the OpenStreetMap tile server, which is suitable for light development use under its [tile usage policy](https://operations.osmfoundation.org/policies/tiles/). That policy requires browsers to send a `Referer` header. Django's default `Referrer-Policy: same-origin` sends none to other sites, so the tile layer alone uses `strict-origin-when-cross-origin`: tile requests carry only the site origin (for example `http://localhost:8000/`), never page paths, and the rest of the site keeps Django's stricter default. Without this, every tile shows "Access blocked".
+
+**Coordinates.** `/api/spaces/` returns plain `latitude`/`longitude` numbers, which are passed to Leaflet as `[latitude, longitude]`. `/api/areas/` returns GeoJSON, whose positions are `[longitude, latitude]`; Leaflet's `L.geoJSON` reads that order itself. Automated tests check both orders.
+
+**Safe display.** Record text (names, addresses, area names) is inserted with `textContent`, never parsed as HTML, so a record created through the API cannot inject markup.
+
+### Boundary endpoint
+
+| Endpoint | Returns |
+| --- | --- |
+| `GET /api/areas/` | GeoJSON `FeatureCollection`; each feature has the area `id`, a `MultiPolygon` geometry and `properties` `{source_id, name}`, ordered by name |
+
+The endpoint is public and read-only (other methods return 405). PostGIS produces the geometry JSON with `ST_AsGeoJSON` in one query. Coordinates are rounded to five decimal places (about 1 m), which keeps the five DCC boundaries to about 330 KB without altering their shape. With no imported areas it returns an empty `FeatureCollection` and the map offers no overlay.
+
+### Static files and `DEBUG`
+
+Django's development server serves `map.js` and `map.css` only when `DJANGO_DEBUG=True`, which is the value in `.env.example`. With `DEBUG=False` the page loads but the map stays blank because its own script returns 404. After adding a new app `static/` folder, restart the server (`docker compose restart web`), because Django finds app static folders when it starts.
+
+A production deployment would need more than changing `DEBUG`: set `STATIC_ROOT`, run `collectstatic`, serve the collected files from a web server such as Nginx (or WhiteNoise), and keep `DEBUG=False` so error pages do not reveal settings and code. It would also serve the site over HTTPS. This is part of the deployment review in Issues #7–8.
+
+### Manual browser checks
+
+Use a current browser with developer tools open on the Console tab.
+
+1. **Load:** the map opens on Dublin, the legend shows Library (24) and Café (633), and the Console shows no errors.
+2. **Interaction:** zoom with the buttons, scroll wheel and pinch; drag to pan; click several markers of each type.
+3. **Popup accuracy:** open `/api/spaces/?type=library` in another tab and compare one library's name, address and facilities with its popup. Libraries should show all five facilities as "Unknown". Find a café with confirmed indoor seating (`/api/spaces/?type=cafe&indoor_seating=true`) and check its popup says "Yes".
+4. **Coordinates:** confirm markers fall on Dublin streets, not in the sea or elsewhere in the world. Click a known library and compare its map position with its `latitude`/`longitude` in the API.
+5. **Boundaries:** tick *Area boundaries* in the layer control; five dashed outlines appear and show their names on hover. Untick to hide them.
+6. **Location selection:** click the map; a pin and coordinates appear. Click elsewhere; the pin moves. Click Clear; both disappear.
+7. **Responsive:** in device mode, check a phone (390 px), tablet (768 px) and desktop width, and rotate the phone. The map fills the screen below the navbar; the legend and attribution stay readable.
+8. **API failure:** run `docker compose stop db` and reload: a red "could not be loaded" message appears and the Console logs the HTTP error. Run `docker compose start db` and reload. DevTools *Offline* mode shows the library-load error instead.
+9. **Unsafe text:** log in at `/admin/`, create a manual study space through `/api/spaces/` named `<img src=x onerror=alert(1)>`, and check its popup shows the text literally with no alert. Delete the record afterwards.
+
+## Issue #5 verification
+
+| Check | Result |
+| --- | --- |
+| Automated tests | All 92 passed, including 4 boundary-endpoint tests and 3 new home-page tests |
+| Django system check and `makemigrations --check` | No issues; no model changes |
+| HTTP smoke checks | Home page, `map.js`, `map.css`, `/api/areas/` 200; POST `/api/areas/` 405; CDN files and OSM tiles reachable |
+| Boundary response on imported data | 5 features, about 327 KB, positions in `[longitude, latitude]` order |
+| Headless Edge render at 390 × 844 | 24 library and 633 café markers, legend counts matched, loading message cleared, layer control present, no JavaScript console errors |
+| Screenshots at phone and desktop widths | Map fills the viewport; legend, controls and attribution visible |
+| SRI hashes | Computed from the downloaded CDN files; they match Leaflet's and Bootstrap's published values |
+
+The first smoke check returned 404 for the new static files until the web server was restarted, as explained above. A test failed once because a code comment contained the word `innerHTML`, which the safe-display test searches for; the comment was reworded. Only step 1 of the manual checks was verified automatically (headless render); steps 2–9 require an interactive browser and are for the student to perform.
+
 ## Development and attribution
 
-Follow [AGENTS.md](AGENTS.md). Issue #4 is limited to spatial search and area-analysis endpoints; maps and the search UI belong to later issues. Imported data is source-reported and has not been independently surveyed.
+Follow [AGENTS.md](AGENTS.md). Issue #5 adds the map and boundary overlay only; search, filtering and area statistics in the interface belong to Issue #6. Imported data is source-reported and has not been independently surveyed.
 
-AI assistance was used for the initial documentation and Issues #1–4 implementation. The student must review, verify and understand the work, and document assistance according to the module policy.
+AI assistance was used for the initial documentation and Issues #1–5 implementation. The student must review, verify and understand the work, and document assistance according to the module policy.

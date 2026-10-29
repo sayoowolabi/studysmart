@@ -12,6 +12,7 @@ from spaces.models import AdministrativeArea, StudySpace
 NEARBY_URL = reverse("spaces:studyspace-nearby")
 NEAREST_URL = reverse("spaces:studyspace-nearest")
 COVERAGE_URL = reverse("spaces:area-coverage")
+AREAS_URL = reverse("spaces:area-list")
 
 ORIGIN_LAT, ORIGIN_LNG = 53.35, -6.26
 
@@ -162,3 +163,45 @@ class CoverageTests(APITestCase):
 
     def test_coverage_is_read_only(self):
         self.assertEqual(self.client.post(COVERAGE_URL, {}).status_code, 405)
+
+
+class AreaBoundaryTests(APITestCase):
+    def setUp(self):
+        make_area("West", (-6.30, 53.30, -6.25, 53.40))
+        make_area("East", (-6.25, 53.30, -6.20, 53.40))
+
+    def test_boundaries_are_geojson_in_longitude_latitude_order(self):
+        with self.assertNumQueries(1):
+            response = self.client.get(AREAS_URL)
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.data["type"], "FeatureCollection")
+        self.assertEqual(
+            [feature["properties"]["name"] for feature in response.data["features"]],
+            ["East", "West"],
+        )
+        west = response.data["features"][1]
+        self.assertEqual(west["type"], "Feature")
+        self.assertEqual(west["properties"], {"source_id": "west", "name": "West"})
+        self.assertEqual(west["geometry"]["type"], "MultiPolygon")
+        # GeoJSON positions are [longitude, latitude]: Dublin is about [-6.3, 53.3], not [53.3, -6.3].
+        ring = west["geometry"]["coordinates"][0][0]
+        self.assertEqual(ring[0], ring[-1])
+        self.assertEqual(
+            {tuple(position) for position in ring},
+            {(-6.3, 53.3), (-6.3, 53.4), (-6.25, 53.4), (-6.25, 53.3)},
+        )
+
+    def test_coordinates_are_rounded_to_five_decimal_places(self):
+        AdministrativeArea.objects.all().delete()
+        make_area("Precise", (-6.123456789, 53.123456789, -6.1, 53.2))
+        ring = self.client.get(AREAS_URL).data["features"][0]["geometry"]["coordinates"][0][0]
+        self.assertIn([-6.12346, 53.12346], ring)
+
+    def test_no_areas_returns_empty_collection(self):
+        AdministrativeArea.objects.all().delete()
+        response = self.client.get(AREAS_URL)
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.data, {"type": "FeatureCollection", "features": []})
+
+    def test_boundaries_are_read_only(self):
+        self.assertEqual(self.client.post(AREAS_URL, {}).status_code, 405)

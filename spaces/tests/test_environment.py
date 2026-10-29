@@ -1,8 +1,12 @@
 import os
+import re
 import subprocess
 import sys
+from pathlib import Path
 
 from django.contrib.gis.gdal import SpatialReference
+from django.contrib.staticfiles import finders
+from django.templatetags.static import static
 from django.contrib.gis.geos import Point
 from django.db import connection
 from django.test import SimpleTestCase, TestCase, override_settings
@@ -16,6 +20,31 @@ class HomePageTests(SimpleTestCase):
         self.assertEqual(response.status_code, 200)
         self.assertTemplateUsed(response, "spaces/home.html")
         self.assertContains(response, "StudySmart")
+
+    def test_home_page_loads_map_with_api_urls(self):
+        response = self.client.get(reverse("spaces:home"))
+        self.assertContains(response, 'id="map"')
+        # URLs come from {% url %}, so the JavaScript never hard-codes API paths.
+        self.assertContains(response, f'data-spaces-url="{reverse("spaces:studyspace-list")}"')
+        self.assertContains(response, f'data-areas-url="{reverse("spaces:area-list")}"')
+        self.assertContains(response, static("spaces/js/map.js"))
+        self.assertContains(response, static("spaces/css/map.css"))
+        self.assertContains(response, 'role="status"')
+
+    def test_cdn_assets_are_pinned_with_integrity_hashes(self):
+        content = self.client.get(reverse("spaces:home")).content.decode()
+        for asset in ("leaflet@1.9.4/dist/leaflet.css", "leaflet@1.9.4/dist/leaflet.js",
+                      "bootstrap@5.3.3/dist/css/bootstrap.min.css"):
+            tag = re.search(rf"<(?:link|script)[^>]*{re.escape(asset)}[^>]*>", content)
+            self.assertIsNotNone(tag, asset)
+            self.assertRegex(tag.group(), r'integrity="sha(256|384)-[A-Za-z0-9+/=]+"')
+
+    def test_map_script_attributes_openstreetmap_and_avoids_inner_html(self):
+        script = Path(finders.find("spaces/js/map.js")).read_text(encoding="utf-8")
+        self.assertIn("https://www.openstreetmap.org/copyright", script)
+        # Without a Referer the OSM tile server returns "Access blocked" tiles.
+        self.assertIn('referrerPolicy: "strict-origin-when-cross-origin"', script)
+        self.assertNotIn("innerHTML", script)
 
     def test_unknown_host_is_rejected(self):
         response = self.client.get("/", HTTP_HOST="unrecognised.invalid")
