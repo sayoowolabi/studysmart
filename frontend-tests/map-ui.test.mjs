@@ -160,11 +160,19 @@ const setChecked = (id, checked) => evaluate(`(() => {
     input.checked = ${checked};
     input.dispatchEvent(new Event("change", {bubbles: true}));
 })()`);
-const chooseCampus = (slug) => evaluate(`(() => {
-    const select = document.getElementById("campus-select");
-    select.value = "${slug}";
-    select.dispatchEvent(new Event("change", {bubbles: true}));
-})()`);
+// Selecting a campus starts its search synchronously ("…" appears in the summary at once),
+// so waiting for the "…" to go waits for this search, not an earlier one with the same text.
+async function chooseCampus(slug, {wait = true} = {}) {
+    await evaluate(`(() => {
+        const select = document.getElementById("campus-select");
+        select.value = "${slug}";
+        select.dispatchEvent(new Event("change", {bubbles: true}));
+    })()`);
+    if (wait) {
+        await waitFor(searchDone);
+        await sleep(500); // Leaflet animates the map to the new results.
+    }
+}
 const cards = () => evaluate(`[...document.querySelectorAll(".result-card")].map((card) => ({
     id: Number(card.dataset.spaceId),
     number: card.querySelector(".result-number").textContent,
@@ -183,14 +191,16 @@ const markerCentre = (label) => evaluate(`(() => {
     const box = marker.getBoundingClientRect();
     return {x: box.left + box.width / 2, y: box.top + box.height / 2};
 })()`);
-// A point on the map with no marker or control on it (tiles may be blocked, so accept the map itself).
+// A point on the map, near its centre, with no marker, popup or control on it.
+// Tiles may be blocked, so any bare part of the map counts.
 const emptyMapPoint = () => evaluate(`(() => {
     const box = document.getElementById("map").getBoundingClientRect();
     const cx = box.left + box.width / 2, cy = box.top + box.height / 2;
+    const blocked = ".leaflet-marker-icon, .leaflet-popup, .leaflet-control, .map-legend, .map-messages";
     for (let d = 0; d < 300; d += 4) {
         for (const [ox, oy] of [[d, 0], [-d, 0], [0, d], [0, -d], [d, d], [-d, -d]]) {
             const element = document.elementFromPoint(cx + ox, cy + oy);
-            if (element && (element.classList.contains("leaflet-tile") || element.id === "map")) {
+            if (element?.closest("#map") && !element.closest(blocked)) {
                 return {x: cx + ox, y: cy + oy};
             }
         }
@@ -363,31 +373,34 @@ async function run() {
     check("unavailable geolocation shows a helpful message", (await text("location-error")).startsWith("Your location could not be found")
         && await evaluate(`!document.getElementById("locate-button").disabled`));
 
-    // Pick on map: a map point, then a marker (which sets that space as the start, without a popup).
+    // Pick on map: first a result marker (while Trinity's 10 results are certainly shown),
+    // which sets that space as the start without opening its popup; then a bare map point.
     await chooseCampus("tcd");
-    await waitFor(summaryStartsWith("Showing"));
+    check("Trinity results shown before picking", (await cards()).length === 10, await summary());
     await click("choose-location");
     check("pick-on-map mode is visible", await evaluate(`document.getElementById("map").classList.contains("map--choosing")
         && !document.getElementById("choose-banner").hidden`));
-    await clickAt(await emptyMapPoint());
-    await waitFor(`document.getElementById("location-text").textContent.includes("map point")`, 5000);
-    await waitFor(searchDone);
-    check("map click sets a map-point start and ends the mode", (await text("location-text")).includes("map point")
-        && !await evaluate(`document.getElementById("map").classList.contains("map--choosing")`));
-    await click("choose-location");
     const firstCard = (await cards())[0];
     await clickAt(await markerCentre("1"));
     await waitFor(`document.getElementById("location-text").textContent.includes(${JSON.stringify(firstCard.name)})`, 5000);
     await waitFor(searchDone);
     check("marker click in pick mode starts from that study space", (await text("location-text")).includes(firstCard.name)
         && !await evaluate(`!!document.querySelector(".leaflet-popup")`));
+    await sleep(500); // Leaflet animates the map to the new results.
+    await click("choose-location");
+    await clickAt(await emptyMapPoint());
+    await waitFor(`document.getElementById("location-text").textContent.includes("map point")`, 5000);
+    await waitFor(searchDone);
+    check("map click sets a map-point start and ends the mode", (await text("location-text")).includes("map point")
+        && !await evaluate(`document.getElementById("map").classList.contains("map--choosing")`));
 
     // Rapid changes: superseded requests are cancelled and the last campus wins.
     for (const slug of ["dcu-glasnevin", "ncad", "rcsi", "griffith", "tcd"]) {
-        await chooseCampus(slug);
+        await chooseCampus(slug, {wait: false});
     }
-    await waitFor(summaryStartsWith(`Showing 10 of ${nearbyTcd.length}`));
-    check("rapid campus changes end on the last campus", (await cards())[0].id === nearbyTcd[0].id);
+    await waitFor(searchDone); // Earlier requests were cancelled; only the last one updates the page.
+    check("rapid campus changes end on the last campus", (await text("location-text")).includes("Trinity")
+        && (await cards())[0]?.id === nearbyTcd[0].id, await summary());
 
     // API failure and recovery (console errors logged during the deliberate failure are expected).
     const errorsBeforeFailure = consoleErrors.length;
