@@ -1,0 +1,57 @@
+# Runs the Django checks and test suite against PostGIS using the project's own
+# Dockerfile and docker-compose.yml, so CI uses the same Python, GDAL/GEOS/PROJ
+# and PostGIS versions as local development.
+name: Tests
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+
+      # Throwaway values for this CI run only. They are not secrets and are used nowhere else.
+      - name: Create a test-only environment file
+        run: |
+          cat > .env <<'EOF'
+          DJANGO_SECRET_KEY=ci-only-insecure-key-used-for-automated-tests-only-7f3a9c41
+          DJANGO_DEBUG=False
+          POSTGRES_DB=studysmart
+          POSTGRES_USER=studysmart
+          POSTGRES_PASSWORD=ci-only-database-password
+          PGADMIN_DEFAULT_EMAIL=ci@example.com
+          PGADMIN_DEFAULT_PASSWORD=ci-only-pgadmin-password
+          EOF
+
+      - name: Validate the Compose configuration
+        run: docker compose config --quiet
+
+      - name: Build the Django image
+        run: docker compose build web
+
+      - name: Start PostGIS and wait for its health check
+        run: docker compose up --detach --wait db
+
+      - name: Django system checks
+        run: docker compose run --rm -T web /usr/local/bin/python manage.py check --database default
+
+      - name: Check for missing migrations
+        run: docker compose run --rm -T web /usr/local/bin/python manage.py makemigrations --check --dry-run
+
+      - name: Run the test suite in random order
+        run: docker compose run --rm -T web /usr/local/bin/python manage.py test spaces --shuffle --verbosity 2
+
+      - name: Show database logs on failure
+        if: failure()
+        run: docker compose logs db
+
+      - name: Stop the CI containers
+        if: always()
+        run: docker compose down --volumes
