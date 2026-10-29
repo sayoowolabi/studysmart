@@ -1,5 +1,7 @@
 # StudySmart
 
+[![Tests](https://github.com/sayoowolabi/studysmart/actions/workflows/tests.yml/badge.svg)](https://github.com/sayoowolabi/studysmart/actions/workflows/tests.yml)
+
 StudySmart is an individual Advanced Web Mapping / Location-Based Services university project to help students find study spaces in Dublin.
 
 ## Current scope
@@ -715,6 +717,57 @@ Mobile (browser DevTools device mode at 390 × 844 and 768 × 1024; enable touch
 4. Open Filters, change the distance: the summary line and results update.
 5. Tap **Pick on map**: the page scrolls to the map with the blue frame and banner; tap a point.
 6. There is no sideways scrolling, and every control can be tapped comfortably.
+
+## Continuous integration and clean-install verification
+
+### Continuous integration
+
+[.github/workflows/tests.yml](.github/workflows/tests.yml) runs on every push and pull request. It reuses this repository's `Dockerfile` and `docker-compose.yml`, so CI uses the same Python, GDAL/GEOS/PROJ and PostGIS 17-3.6 as local development. It writes a test-only `.env` (throwaway values, `DJANGO_DEBUG=False`; no repository secrets), then:
+
+1. validates the Compose file and builds the Django image;
+2. starts PostGIS and waits for its health check;
+3. runs `manage.py check`, `makemigrations --check --dry-run` and `manage.py test spaces --shuffle`;
+4. removes the CI containers and volumes.
+
+First run (commit `573c3ca`, 2026-10-29): **passed** in about one minute. The log shows PostGIS healthy, no system-check issues, no missing migrations, and 129 tests passing in random order, including `test_postgis_is_available`. The same commands also pass locally with `DJANGO_DEBUG=False`; no application or settings changes were needed.
+
+### Clean-install verification
+
+On 2026-10-29 the repository was installed from a fresh clone (branch `feature/ci-quality`, commit `573c3ca`) following only this README, without affecting the existing development stack.
+
+**Isolation.** The clone's `.env` was created from `.env.example` with new random secrets plus `COMPOSE_PROJECT_NAME=studysmart-fresh` and `DOCKER_SUBNET=172.30.60.0/24`, giving it its own containers, network and `studysmart-fresh_*` volumes. An uncommitted `docker-compose.override.yml` in the clone published it on other host ports:
+
+```yaml
+services:
+  web:
+    ports: !override
+      - "127.0.0.1:18000:8000"
+  pgadmin:
+    ports: !override
+      - "127.0.0.1:15050:80"
+```
+
+Every command used `docker compose -p studysmart-fresh …`.
+
+| Step (README command) | Result |
+| --- | --- |
+| `config --quiet`, `build web` | Passed; cold build about 5 minutes |
+| `up -d db pgadmin`, `run --rm web … migrate`, `up -d web` | PostGIS healthy; all migrations applied, including `spaces.0001_initial` |
+| `import_administrative_areas --repair-invalid` (dry run, then real), `import_libraries`, `import_cafes` | 5 areas, 24 libraries, 633 cafés (408 outside the area, 49 unnamed rejected), matching the recorded counts |
+| The three imports again | All `unchanged`; no duplicates |
+| `check --database default`, `pip check`, `showmigrations`, `test spaces` | No issues; no broken requirements; migration applied; 129 tests passed |
+| HTTP checks on port 18000 | Page, scripts, stylesheet, font and all API endpoints 200; anonymous POST 403; coverage totals 657; nearby search from Trinity returns 250 within 1 km |
+| Scripted headless browser check (40 checks) | All passed |
+| Existing development stack afterwards | Unchanged: same containers, ports, volumes and row counts |
+
+**Findings.**
+
+- No hidden dependency on local files or existing database state: everything needed (code, migrations, source snapshots, identity maps, manifest) is in Git.
+- A fresh import includes the Issue #6 follow-up `socket:bs1363` mapping, so one café (Filo) has confirmed power outlets and the outlet filter shows "(1 confirmed)". An existing database shows "(no confirmed records yet)" until `import_cafes` is run again.
+- The top-level `name: studysmart` and fixed host ports mean a second copy needs a different project name and an override file, as above.
+- The first build downloads the base images and Python packages and needs internet access; later starts do not.
+
+To remove only the test installation afterwards, run `docker compose -p studysmart-fresh down --volumes` from the clone after checking `docker volume ls` lists only `studysmart-fresh_*` volumes for that project.
 
 ## Development and attribution
 
