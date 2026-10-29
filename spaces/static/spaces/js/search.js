@@ -17,7 +17,6 @@ import {clearResults, markActiveResult, renderLoading, renderResults} from "./re
 import {clearStatus, setStatus} from "./status.js";
 
 const RESULT_LIMIT = 10;
-const DEFAULT_RADIUS = "1000";
 // Matches the CSS breakpoint where the panel becomes a separate scrolling column.
 const LARGE_SCREEN = window.matchMedia("(min-width: 992px)");
 const GEOLOCATION_OPTIONS = {enableHighAccuracy: false, timeout: 10000, maximumAge: 60000};
@@ -195,14 +194,9 @@ function hideLocationError() {
 
 /* ---------- Step 2: filters ---------- */
 
+/* Restores every filter to its default in the HTML (the "checked" attributes), then searches again. */
 function resetFilters() {
-    for (const box of document.querySelectorAll('input[name="type"]')) {
-        box.checked = true;
-    }
-    for (const box of document.querySelectorAll('input[name="facility"]')) {
-        box.checked = false;
-    }
-    element(`radius-${DEFAULT_RADIUS}`).checked = true;
+    element("search-form").reset();
     rerun();
 }
 

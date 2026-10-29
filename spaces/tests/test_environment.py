@@ -58,6 +58,32 @@ class HomePageTests(TestCase):  # The page counts confirmed facilities, so it ne
         self.assertTrue({"campus-select", "radius-1000", "type-cafe"} <= set(control_ids))
         self.assertEqual(set(control_ids) - labelled_ids, set())
 
+    def test_page_has_a_single_h1(self):
+        content = self.client.get(reverse("spaces:home")).content.decode()
+        headings = re.findall(r"<h1[^>]*>(.*?)</h1>", content, re.S)
+        self.assertEqual(len(headings), 1)
+        self.assertEqual(re.sub(r"<span[^>]*aria-hidden[^>]*>.*?</span>", "", headings[0]).strip(), "StudySmart")
+
+    def test_search_progress_is_announced_by_one_live_region(self):
+        # Two polite live regions made screen readers announce "Searching…" twice.
+        content = self.client.get(reverse("spaces:home")).content.decode()
+        live_regions = re.findall(r'<[^>]*aria-live="polite"[^>]*>', content)
+        self.assertEqual(len(live_regions), 1)
+        self.assertIn('id="results-summary"', live_regions[0])
+        self.assertRegex(content, r'<div id="map-messages" class="map-messages">')
+        # Map-level warnings are announced individually instead.
+        status_script = Path(finders.find("spaces/js/status.js")).read_text(encoding="utf-8")
+        self.assertIn('setAttribute("role", "alert")', status_script)
+
+    def test_default_radius_is_defined_once_in_the_page(self):
+        # "Reset filters" restores the HTML defaults, so the page is the single source of the default.
+        content = self.client.get(reverse("spaces:home")).content.decode()
+        checked = re.findall(r'name="radius" value="(\d+)" id="radius-\d+" checked', content)
+        self.assertEqual(checked, ["1000"])
+        search_script = Path(finders.find("spaces/js/search.js")).read_text(encoding="utf-8")
+        self.assertIn('element("search-form").reset()', search_script)
+        self.assertNotRegex(search_script, r"radius-\$\{|DEFAULT_RADIUS")
+
     def test_location_selection_mode_controls(self):
         content = self.client.get(reverse("spaces:home")).content.decode()
         self.assertRegex(content, r'<button type="button" id="choose-location"[^>]*aria-pressed="false"')

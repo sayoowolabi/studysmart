@@ -26,6 +26,7 @@ export function clearStatus() {
 export function showWarning(text, variant = "warning") {
     const alert = document.createElement("div");
     alert.className = `alert alert-${variant}`;
+    alert.setAttribute("role", "alert"); // Announced once; the message area itself is not a live region.
     alert.textContent = text;
     messageArea().append(alert);
 }
