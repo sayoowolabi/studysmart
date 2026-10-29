@@ -3,7 +3,9 @@
 Along a meridian, 0.01 degrees of latitude is about 1,112 m (2*pi*R/36,000 with
 R of about 6,371 km), and 0.005 degrees is about 556 m.
 """
+from django.contrib.gis.db.models.fields import get_srid_info
 from django.contrib.gis.geos import MultiPolygon, Point, Polygon
+from django.db import connection
 from django.urls import reverse
 from rest_framework.test import APITestCase
 
@@ -13,6 +15,13 @@ NEARBY_URL = reverse("spaces:studyspace-nearby")
 NEAREST_URL = reverse("spaces:studyspace-nearest")
 COVERAGE_URL = reverse("spaces:area-coverage")
 AREAS_URL = reverse("spaces:area-list")
+
+
+def setUpModule():
+    # The first Distance query in a process makes GeoDjango read EPSG:4326's units from
+    # spatial_ref_sys and cache them. Load that cache now, so assertNumQueries counts only
+    # the query under test, whichever test runs first (CI shuffles the order).
+    get_srid_info(4326, connection)
 
 ORIGIN_LAT, ORIGIN_LNG = 53.35, -6.26
 
