@@ -1,3 +1,5 @@
+from django.db import DatabaseError
+from django.db.models import Count, Q
 from django.shortcuts import render
 from rest_framework import status, viewsets
 from rest_framework.decorators import action
@@ -19,8 +21,33 @@ from .spatial import (
 FACILITY_FILTER_VALUES = {"true": True, "false": False, "unknown": None}
 
 
+# Facility filters offered on the map page, in display order.
+MAP_FACILITY_FILTERS = (
+    ("indoor_seating", "Indoor seating"),
+    ("has_wifi", "Wi-Fi"),
+    ("has_outlets", "Power outlets"),
+)
+
+
+def confirmed_facility_counts():
+    """Records confirming each map facility (value true), or None if the database is unavailable."""
+    try:
+        return StudySpace.objects.aggregate(**{
+            field: Count("pk", filter=Q(**{field: True})) for field, _ in MAP_FACILITY_FILTERS
+        })
+    except DatabaseError:
+        return None
+
+
 def home(request):
-    return render(request, "spaces/home.html")
+    # A filter with no confirmed records could only ever return nothing, so the template
+    # disables it. It becomes available on the next page load once confirmed data exists.
+    counts = confirmed_facility_counts()
+    facility_filters = [
+        {"field": field, "label": label, "confirmed": None if counts is None else counts[field]}
+        for field, label in MAP_FACILITY_FILTERS
+    ]
+    return render(request, "spaces/home.html", {"facility_filters": facility_filters})
 
 
 class ImportedRecordConflict(APIException):

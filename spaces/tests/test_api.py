@@ -94,6 +94,9 @@ class FilterTests(APITestBase):
     def test_unknown_filter_matches_only_null_values(self):
         self.assertEqual(self.list_names("?indoor_seating=unknown"), ["Unknown Cafe"])
 
+    def test_false_filter_matches_only_confirmed_absence(self):
+        self.assertEqual(self.list_names("?indoor_seating=false"), ["Standing Cafe"])
+
     def test_invalid_filter_values_are_rejected(self):
         for query in ("?type=university", "?indoor_seating=maybe"):
             with self.subTest(query=query):

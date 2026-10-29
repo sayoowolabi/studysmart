@@ -62,6 +62,19 @@ class FacilityTagTests(SimpleTestCase):
         self.assertIs(self.facilities({"socket:typeg": "2"})["has_outlets"], True)
         self.assertIsNone(self.facilities({"socket:typeg": "2", "power_supply": "no"})["has_outlets"])
 
+    def test_bs1363_domestic_socket_confirms_outlets(self):
+        # socket:bs1363 is the OSM key for the type G sockets used in Ireland.
+        for value in ("yes", "4"):
+            with self.subTest(value=value):
+                self.assertIs(self.facilities({"socket:bs1363": value})["has_outlets"], True)
+        for tags in ({"socket:bs1363": "0"}, {"socket:bs1363": "no"},
+                     {"socket:bs1363": "yes", "socket:bs1363:conditional": "no @ (Sa,Su)"}):
+            with self.subTest(tags=tags):
+                self.assertIsNone(self.facilities(tags)["has_outlets"])
+        values, issues = parse_facilities({"socket:bs1363": "yes", "power_supply": "no"})
+        self.assertIsNone(values["has_outlets"])
+        self.assertTrue(issues)
+
     def test_restrictions_are_not_unconditional_permission(self):
         values, issues = parse_facilities({"laptop": "restricted"})
         self.assertIsNone(values["laptop_allowed"])

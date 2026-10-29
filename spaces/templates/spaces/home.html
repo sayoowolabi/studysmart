@@ -10,9 +10,10 @@
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
           integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin="anonymous">
     <link rel="stylesheet" href="{% static 'spaces/css/map.css' %}">
+    <!-- Leaflet runs first (deferred scripts and modules run in document order). -->
     <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" defer
             integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin="anonymous"></script>
-    <script src="{% static 'spaces/js/map.js' %}" defer></script>
+    <script type="module" src="{% static 'spaces/js/map.js' %}"></script>
 </head>
 <body class="map-page">
     <nav class="navbar bg-dark" data-bs-theme="dark">
@@ -22,33 +23,122 @@
         </div>
     </nav>
 
-    <main class="map-wrapper">
-        <div id="map" class="map" role="region" aria-label="Map of Dublin libraries and cafés"
-             data-spaces-url="{% url 'spaces:studyspace-list' %}"
-             data-areas-url="{% url 'spaces:area-list' %}"></div>
+    <main class="app-layout">
+        <div class="map-wrapper">
+            <div id="map" class="map" role="region" aria-label="Map of Dublin libraries and cafés"
+                 data-spaces-url="{% url 'spaces:studyspace-list' %}"
+                 data-nearby-url="{% url 'spaces:studyspace-nearby' %}"
+                 data-nearest-url="{% url 'spaces:studyspace-nearest' %}"
+                 data-areas-url="{% url 'spaces:area-list' %}"
+                 data-coverage-url="{% url 'spaces:area-coverage' %}"></div>
 
-        <!-- Loading, empty and error messages are added here by map.js. -->
-        <div id="map-messages" class="map-messages" role="status" aria-live="polite">
-            <noscript><div class="alert alert-warning">The map needs JavaScript to be enabled.</div></noscript>
-        </div>
+            <!-- Loading, empty and error messages are added here by status.js. -->
+            <div id="map-messages" class="map-messages" role="status" aria-live="polite">
+                <div id="choose-banner" class="alert alert-primary choose-banner" hidden>
+                    <span>Tap the map or a study-space marker to set the search location.</span>
+                    <button type="button" id="cancel-choosing" class="btn btn-sm btn-light">Cancel</button>
+                </div>
+                <noscript><div class="alert alert-warning">The map needs JavaScript to be enabled.</div></noscript>
+            </div>
 
-        <div class="map-panel">
-            <section id="selected-location" class="card" aria-label="Selected search location" hidden>
-                <p class="mb-1">Selected location:<br><span id="selected-coordinates"></span></p>
-                <button type="button" id="clear-selection" class="btn btn-sm btn-outline-secondary">Clear</button>
-            </section>
-
-            <section class="card" aria-labelledby="legend-heading">
-                <h2 id="legend-heading" class="h6 mb-1">Legend</h2>
-                <ul class="map-legend">
+            <section class="map-legend card" aria-labelledby="legend-heading">
+                <h2 id="legend-heading" class="h6 mb-1">Legend <span class="fw-normal small">(shown)</span></h2>
+                <ul>
                     <li><span class="space-marker space-marker--library" aria-hidden="true">L</span>
                         Library <span id="library-count" class="text-body-secondary"></span></li>
                     <li><span class="space-marker space-marker--cafe" aria-hidden="true">C</span>
                         Café <span id="cafe-count" class="text-body-secondary"></span></li>
                 </ul>
-                <p class="map-hint mb-0">Click the map to choose a search location.</p>
             </section>
         </div>
+
+        <aside class="sidebar" aria-label="Search and filters">
+            <form id="search-form">
+                <section class="sidebar-section" aria-labelledby="location-heading">
+                    <h2 id="location-heading" class="h6">Search location</h2>
+                    <button type="button" id="choose-location" class="btn btn-outline-primary btn-sm w-100 mb-2" aria-pressed="false">
+                        Choose search location
+                    </button>
+                    <p id="location-text" class="small mb-2">No location chosen. Press the button above, then tap the map or a marker.</p>
+                    <label for="radius" class="form-label small mb-1">Search radius</label>
+                    <select id="radius" class="form-select form-select-sm mb-2">
+                        <option value="250">250 m</option>
+                        <option value="500">500 m</option>
+                        <option value="1000" selected>1 km</option>
+                        <option value="2000">2 km</option>
+                        <option value="5000">5 km</option>
+                    </select>
+                    <div class="d-grid gap-2">
+                        <button type="button" id="nearby-button" class="btn btn-primary btn-sm" disabled>Search within radius</button>
+                        <button type="button" id="nearest-button" class="btn btn-outline-primary btn-sm" disabled>Find nearest</button>
+                        <button type="button" id="clear-location" class="btn btn-outline-secondary btn-sm" disabled>Clear location and show all</button>
+                    </div>
+                </section>
+
+                <fieldset class="sidebar-section">
+                    <legend class="h6">Study-space type</legend>
+                    <div class="form-check form-check-inline">
+                        <input class="form-check-input" type="checkbox" name="type" value="library" id="type-library" checked>
+                        <label class="form-check-label" for="type-library">Libraries</label>
+                    </div>
+                    <div class="form-check form-check-inline">
+                        <input class="form-check-input" type="checkbox" name="type" value="cafe" id="type-cafe" checked>
+                        <label class="form-check-label" for="type-cafe">Cafés</label>
+                    </div>
+                </fieldset>
+
+                <fieldset class="sidebar-section" aria-describedby="facility-help">
+                    <legend class="h6">Confirmed facilities</legend>
+                    {% for facility in facility_filters %}
+                    <div class="form-check">
+                        {# Counts come from the database when the page loads; a facility nobody confirms is disabled. #}
+                        <input class="form-check-input" type="checkbox" name="facility" value="{{ facility.field }}"
+                               id="facility-{{ facility.field }}"{% if facility.confirmed == 0 %} disabled{% endif %}>
+                        <label class="form-check-label" for="facility-{{ facility.field }}">
+                            {{ facility.label }}
+                            {% if facility.confirmed == 0 %}<span class="small text-body-secondary">(no confirmed records yet)</span>
+                            {% elif facility.confirmed %}<span class="small text-body-secondary">({{ facility.confirmed }} confirmed)</span>{% endif %}
+                        </label>
+                    </div>
+                    {% endfor %}
+                    <p id="facility-help" class="form-text mb-0">
+                        Only places whose source confirms a facility are shown; unknown is never treated as yes.
+                        Libraries appear in every search without a facility filter, but their facilities are not yet
+                        recorded, so a facility filter hides them. Seating is not live availability.
+                    </p>
+                </fieldset>
+
+                <button type="button" id="reset-filters" class="btn btn-link btn-sm px-0">Reset filters</button>
+            </form>
+
+            <section class="sidebar-section" aria-labelledby="results-heading">
+                <h2 id="results-heading" class="h6">Results</h2>
+                <div aria-live="polite">
+                    <p id="results-summary" class="small mb-2">Loading study spaces…</p>
+                    <div id="results-list" class="list-group list-group-flush"></div>
+                </div>
+            </section>
+
+            <section class="sidebar-section" aria-labelledby="areas-heading">
+                <h2 id="areas-heading" class="h6">All Recorded Study Spaces by Area</h2>
+                <p class="form-text mt-0">
+                    Dataset-wide counts calculated by PostGIS. The search location, radius and filters above
+                    do not change these numbers.
+                </p>
+                <p id="area-status" class="small">Loading area statistics…</p>
+                <table id="area-table" class="table table-sm small mb-0" hidden>
+                    <thead>
+                        <tr>
+                            <th scope="col">Area</th>
+                            <th scope="col" class="text-end">Libraries</th>
+                            <th scope="col" class="text-end">Cafés</th>
+                            <th scope="col" class="text-end">Total</th>
+                        </tr>
+                    </thead>
+                    <tbody></tbody>
+                </table>
+            </section>
+        </aside>
     </main>
 </body>
 </html>
