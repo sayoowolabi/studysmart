@@ -213,6 +213,14 @@ async function clickableResultMarker() {
         previous = position;
         await sleep(150);
     }
+    // Explain the failure: where each numbered marker is and what covers its centre.
+    const report = await evaluate(`[...document.querySelectorAll(".leaflet-marker-pane .space-marker")].map((marker) => {
+        const box = marker.getBoundingClientRect();
+        const x = Math.round(box.left + box.width / 2), y = Math.round(box.top + box.height / 2);
+        const top = document.elementFromPoint(x, y);
+        return marker.textContent + "@" + x + "," + y + " under " + (top ? (top.id || String(top.className).slice(0, 40)) : "nothing");
+    }).join("; ") + " | viewport " + innerWidth + "x" + innerHeight`);
+    console.log(`DIAG  no clickable result marker: ${report}`);
     return null;
 }
 
