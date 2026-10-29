@@ -219,7 +219,10 @@ async function clickableResultMarker() {
         const x = Math.round(box.left + box.width / 2), y = Math.round(box.top + box.height / 2);
         const top = document.elementFromPoint(x, y);
         return marker.textContent + "@" + x + "," + y + " under " + (top ? (top.id || String(top.className).slice(0, 40)) : "nothing");
-    }).join("; ") + " | viewport " + innerWidth + "x" + innerHeight`);
+    }).join("; ") + " | viewport " + innerWidth + "x" + innerHeight
+        + " | map box " + JSON.stringify(document.getElementById("map").getBoundingClientRect())
+        + " | map scroll " + document.getElementById("map").scrollLeft + "," + document.getElementById("map").scrollTop
+        + " | page scroll " + scrollX + "," + scrollY`);
     console.log(`DIAG  no clickable result marker: ${report}`);
     return null;
 }
@@ -416,6 +419,9 @@ async function run() {
     // which sets that space as the start without opening its popup; then a bare map point.
     await chooseCampus("tcd");
     check("Trinity results shown before picking", (await cards()).length === 10, await summary());
+    // Centre the map on result 1 the way a user would (its card), so the marker is in view.
+    await evaluate(`document.querySelectorAll(".result-card")[0].click()`);
+    await sleep(800);
     await startPicking();
     check("pick-on-map mode is visible", await evaluate(`document.getElementById("map").classList.contains("map--choosing")
         && !document.getElementById("choose-banner").hidden`));
