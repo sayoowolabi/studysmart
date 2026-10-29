@@ -8,7 +8,7 @@ export const SPACE_TYPES = {
     cafe: {label: "Café", letter: "C"},
 };
 
-const FACILITY_LABELS = {
+export const FACILITY_LABELS = {
     indoor_seating: "Indoor seating",
     outdoor_seating: "Outdoor seating",
     has_wifi: "Wi-Fi",
@@ -41,50 +41,79 @@ export function createSpaceLayers(map) {
 
 /*
  * Replaces the markers on the map and returns them by study-space id.
- * onMarkerClick(marker) runs first on every marker click; if it returns true the
- * click has been used (for example to choose a search location) and no popup opens.
+ * numbered: label markers 1, 2, 3… in list order (search results) instead of L/C.
+ * onMarkerClick(marker, space) runs first on every marker click; if it returns true
+ * the click has been used (for example to pick a starting point) and no popup opens.
  */
-export function showSpaces(layers, spaces, {highlightedId = null, onMarkerClick = () => false} = {}) {
+export function showSpaces(layers, spaces, {numbered = false, onMarkerClick = () => false} = {}) {
     for (const layer of Object.values(layers)) {
         layer.clearLayers();
     }
     const markers = new Map();
-    for (const space of spaces) {
+    spaces.forEach((space, index) => {
         // The API returns plain latitude/longitude numbers, not GeoJSON, so no swap is needed.
         if (!layers[space.space_type] || !Number.isFinite(space.latitude) || !Number.isFinite(space.longitude)) {
             console.warn("Skipping study space with unexpected type or coordinates:", space.id);
-            continue;
+            return;
         }
-        const marker = createSpaceMarker(space, space.id === highlightedId, onMarkerClick);
+        const label = numbered ? String(index + 1) : SPACE_TYPES[space.space_type].letter;
+        const rank = numbered ? index : null;
+        const marker = createSpaceMarker(space, label, rank, onMarkerClick);
         marker.addTo(layers[space.space_type]);
         markers.set(space.id, marker);
-    }
+    });
     for (const [type, layer] of Object.entries(layers)) {
         document.getElementById(`${type}-count`).textContent = `(${layer.getLayers().length})`;
     }
     return markers;
 }
 
-function createSpaceMarker(space, highlighted, onMarkerClick) {
+/* Switches a marker between its normal and highlighted (selected result) appearance. */
+export function setMarkerHighlight(marker, highlighted) {
+    const {space, label, rank} = marker.options;
+    marker.setIcon(markerIcon(space, label, highlighted));
+    marker.setZIndexOffset(stackingOffset(space, rank, highlighted));
+}
+
+function markerIcon(space, label, highlighted) {
     const size = highlighted ? 34 : 24;
-    const icon = L.divIcon({
+    return L.divIcon({
         className: `space-marker space-marker--${space.space_type}${highlighted ? " space-marker--highlight" : ""}`,
-        html: SPACE_TYPES[space.space_type].letter,
+        html: label, // Only a type letter or a result number, never record text.
         iconSize: [size, size],
         popupAnchor: [0, -size / 2],
     });
-    // Draw the few libraries above the many cafés, and a highlighted result above both.
-    let zIndexOffset = space.space_type === "library" ? 1000 : 0;
+}
+
+/*
+ * Which marker is drawn on top where markers overlap: a highlighted result first; then,
+ * among numbered results, the nearer one (lower number); otherwise libraries above the
+ * many cafés. Leaflet adds this offset to each marker's screen position.
+ */
+function stackingOffset(space, rank, highlighted) {
     if (highlighted) {
-        zIndexOffset = 2000;
+        return 3000;
     }
-    const marker = L.marker([space.latitude, space.longitude], {icon, title: space.name, zIndexOffset})
-        .bindPopup(() => buildPopup(space), {maxWidth: 260});
+    if (rank !== null) {
+        return 2000 - rank * 50;
+    }
+    return space.space_type === "library" ? 1000 : 0;
+}
+
+function createSpaceMarker(space, label, rank, onMarkerClick) {
+    const marker = L.marker([space.latitude, space.longitude], {
+        icon: markerIcon(space, label, false),
+        title: space.name,
+        zIndexOffset: stackingOffset(space, rank, false),
+        space,
+        label,
+        rank,
+    }).bindPopup(() => buildPopup(space), {maxWidth: 260});
 
     // bindPopup opens the popup on click or Enter. Replace those handlers with one that
-    // asks onMarkerClick first, so the same marker can also be used to choose a location.
+    // asks onMarkerClick first, so the same marker can also be used to pick a location.
     const activate = () => {
-        if (!onMarkerClick(marker)) {
+        if (!onMarkerClick(marker, space)) {
             marker.openPopup();
         }
     };

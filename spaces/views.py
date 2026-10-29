@@ -16,10 +16,14 @@ from .serializers import (
 from .spatial import (
     area_boundaries, area_coverage, nearest_space, search_point, spaces_within,
 )
+from .universities import CAMPUSES
 
 # "unknown" matches SQL NULL, so unknown facilities are never treated as true or false.
 FACILITY_FILTER_VALUES = {"true": True, "false": False, "unknown": None}
 
+
+# Search radii offered on the map page (metres); tests check they are within the API's limit.
+RADIUS_CHOICES_M = (500, 1000, 2000, 5000)
 
 # Facility filters offered on the map page, in display order.
 MAP_FACILITY_FILTERS = (
@@ -47,7 +51,11 @@ def home(request):
         {"field": field, "label": label, "confirmed": None if counts is None else counts[field]}
         for field, label in MAP_FACILITY_FILTERS
     ]
-    return render(request, "spaces/home.html", {"facility_filters": facility_filters})
+    return render(request, "spaces/home.html", {
+        "facility_filters": facility_filters,
+        "campuses": CAMPUSES,
+        "radius_choices": RADIUS_CHOICES_M,
+    })
 
 
 class ImportedRecordConflict(APIException):

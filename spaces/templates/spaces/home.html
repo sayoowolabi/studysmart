@@ -15,15 +15,146 @@
             integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin="anonymous"></script>
     <script type="module" src="{% static 'spaces/js/map.js' %}"></script>
 </head>
-<body class="map-page">
-    <nav class="navbar bg-dark" data-bs-theme="dark">
-        <div class="container-fluid">
-            <span class="navbar-brand mb-0 h1">StudySmart</span>
-            <span class="navbar-text small d-none d-sm-inline">Libraries and cafés for studying in Dublin</span>
-        </div>
-    </nav>
+<body class="app">
+    <!-- Icons drawn for StudySmart; used by <use href="#…">. Card thumbnails are illustrations, not photos. -->
+    <svg xmlns="http://www.w3.org/2000/svg" hidden>
+        <symbol id="icon-library" viewBox="0 0 24 24"><path d="M4 19.5V5a2 2 0 0 1 2-2h13v16H6a2 2 0 0 0-2 2.5Z M4 19.5A2 2 0 0 0 6 21h13 M8 7h7 M8 11h5"/></symbol>
+        <symbol id="icon-cafe" viewBox="0 0 24 24"><path d="M4 9h12v5a5 5 0 0 1-5 5H9a5 5 0 0 1-5-5V9Z M16 10h1.5a2.5 2.5 0 0 1 0 5H16 M8 3.5v2.5 M12 3.5v2.5"/></symbol>
+        <symbol id="icon-locate" viewBox="0 0 24 24"><path d="M12 2v3 M12 19v3 M2 12h3 M19 12h3 M12 8a4 4 0 1 1 0 8a4 4 0 0 1 0-8Z"/></symbol>
+        <symbol id="icon-pin" viewBox="0 0 24 24"><path d="M12 21s-6-5.6-6-11a6 6 0 1 1 12 0c0 5.4-6 11-6 11Z M12 7.5a2.5 2.5 0 1 1 0 5a2.5 2.5 0 0 1 0-5Z"/></symbol>
+    </svg>
+
+    <header class="app-header">
+        <span class="brand"><span class="brand-mark" aria-hidden="true">S</span>StudySmart</span>
+        <span class="brand-tagline">Find a library or café to study in Dublin</span>
+    </header>
 
     <main class="app-layout">
+        <!-- On large screens .panel is the left column; on smaller screens its two parts stack around the map. -->
+        <div class="panel">
+            <div class="panel-controls">
+                <section class="step" aria-labelledby="step-location">
+                    <h2 id="step-location" class="step-title"><span class="step-number" aria-hidden="true">1</span>Where are you studying from?</h2>
+                    <label for="campus-select" class="form-label small fw-semibold">University campus</label>
+                    <select id="campus-select" class="form-select">
+                        <option value="" selected>Choose a campus…</option>
+                        {% for campus in campuses %}
+                        <option value="{{ campus.slug }}" data-lat="{{ campus.latitude|stringformat:'s' }}"
+                                data-lng="{{ campus.longitude|stringformat:'s' }}" data-note="{{ campus.coverage_note }}">{{ campus.name }}</option>
+                        {% endfor %}
+                    </select>
+                    <p id="campus-note" class="coverage-note" hidden></p>
+
+                    <div class="location-actions">
+                        <button type="button" id="locate-button" class="btn btn-outline-primary btn-sm">
+                            <svg class="icon" aria-hidden="true"><use href="#icon-locate"></use></svg>Use my location
+                        </button>
+                        <button type="button" id="choose-location" class="btn btn-outline-secondary btn-sm" aria-pressed="false">
+                            <svg class="icon" aria-hidden="true"><use href="#icon-pin"></use></svg><span id="choose-label">Pick on map</span>
+                        </button>
+                    </div>
+                    <div class="location-status">
+                        <p id="location-text" class="mb-0">No starting point yet.</p>
+                        <button type="button" id="clear-location" class="btn btn-link btn-sm p-0" hidden>Clear</button>
+                    </div>
+                    <p id="location-error" class="location-error" role="alert" hidden></p>
+                </section>
+
+                <form id="search-form" class="step" aria-labelledby="step-filters">
+                    <!-- Open on large screens; search.js closes it on phones and tablets to keep the map in view. -->
+                    <details id="filters-details" class="filters" open>
+                    <summary class="filters-summary">
+                        <h2 id="step-filters" class="step-title mb-0"><span class="step-number" aria-hidden="true">2</span>Filters</h2>
+                        <span id="filter-summary" class="filter-summary"></span>
+                    </summary>
+                    <div class="filters-body">
+
+                    <fieldset class="filter-group">
+                        <legend class="filter-legend">Distance</legend>
+                        <div class="chip-row">
+                            {% for radius in radius_choices %}
+                            <input type="radio" class="btn-check" name="radius" value="{{ radius }}" id="radius-{{ radius }}"{% if radius == 1000 %} checked{% endif %}>
+                            <label class="btn chip" for="radius-{{ radius }}">{% if radius < 1000 %}{{ radius }} m{% else %}{% widthratio radius 1000 1 %} km{% endif %}</label>
+                            {% endfor %}
+                        </div>
+                    </fieldset>
+
+                    <fieldset class="filter-group">
+                        <legend class="filter-legend">Type</legend>
+                        <div class="chip-row">
+                            <input class="btn-check" type="checkbox" name="type" value="library" id="type-library" checked>
+                            <label class="btn chip" for="type-library">Libraries</label>
+                            <input class="btn-check" type="checkbox" name="type" value="cafe" id="type-cafe" checked>
+                            <label class="btn chip" for="type-cafe">Cafés</label>
+                        </div>
+                    </fieldset>
+
+                    <fieldset class="filter-group" aria-describedby="facility-help">
+                        <legend class="filter-legend">Confirmed facilities</legend>
+                        <div class="chip-row">
+                            {% for facility in facility_filters %}
+                            {# Counts come from the database when the page loads; a facility nobody confirms is disabled. #}
+                            <input class="btn-check" type="checkbox" name="facility" value="{{ facility.field }}"
+                                   id="facility-{{ facility.field }}"{% if facility.confirmed == 0 %} disabled{% endif %}>
+                            <label class="btn chip" for="facility-{{ facility.field }}">
+                                {{ facility.label }}
+                                {% if facility.confirmed == 0 %}<span class="chip-count">(no confirmed records yet)</span>
+                                {% elif facility.confirmed %}<span class="chip-count">({{ facility.confirmed }} confirmed)</span>{% endif %}
+                            </label>
+                            {% endfor %}
+                        </div>
+                        <p id="facility-help" class="filter-help">
+                            Only places whose source confirms a facility are shown; unknown is never treated as yes.
+                            Libraries' facilities are not yet recorded, so a facility filter hides them.
+                            Seating is not live availability.
+                        </p>
+                    </fieldset>
+
+                    <button type="button" id="reset-filters" class="btn btn-link btn-sm p-0">Reset filters</button>
+                    </div>
+                    </details>
+                </form>
+            </div>
+
+            <section class="panel-results step" aria-labelledby="results-heading">
+                <h2 id="results-heading" class="step-title"><span class="step-number" aria-hidden="true">3</span>Nearby study spaces</h2>
+                <p id="results-summary" class="results-summary" role="status" aria-live="polite">
+                    Choose a starting point to see the 10 nearest study spaces.
+                </p>
+                <ol id="results-list" class="result-list"></ol>
+                <div id="results-actions" class="results-actions" hidden>
+                    <button type="button" id="widen-radius" class="btn btn-sm btn-primary">Search a wider area</button>
+                    <button type="button" id="show-nearest" class="btn btn-sm btn-outline-primary">Show nearest match</button>
+                </div>
+
+                <details class="about-data">
+                    <summary>About the data</summary>
+                    <h3 id="areas-heading" class="h6 mt-3">All Recorded Study Spaces by Area</h3>
+                    <p class="filter-help mt-0">
+                        Dataset-wide counts calculated by PostGIS. The search location, radius and filters above
+                        do not change these numbers.
+                    </p>
+                    <p id="area-status" class="small">Loading area statistics…</p>
+                    <table id="area-table" class="table table-sm small mb-2" aria-labelledby="areas-heading" hidden>
+                        <thead>
+                            <tr>
+                                <th scope="col">Area</th>
+                                <th scope="col" class="text-end">Libraries</th>
+                                <th scope="col" class="text-end">Cafés</th>
+                                <th scope="col" class="text-end">Total</th>
+                            </tr>
+                        </thead>
+                        <tbody></tbody>
+                    </table>
+                    <p class="filter-help">
+                        Libraries: Dublin City Council (CC BY). Cafés: © OpenStreetMap contributors (ODbL).
+                        Campus locations: © OpenStreetMap contributors. Coverage is the Dublin City Council area;
+                        facilities are source-reported and many are not recorded.
+                    </p>
+                </details>
+            </section>
+        </div>
+
         <div class="map-wrapper">
             <div id="map" class="map" role="region" aria-label="Map of Dublin libraries and cafés"
                  data-spaces-url="{% url 'spaces:studyspace-list' %}"
@@ -32,17 +163,17 @@
                  data-areas-url="{% url 'spaces:area-list' %}"
                  data-coverage-url="{% url 'spaces:area-coverage' %}"></div>
 
-            <!-- Loading, empty and error messages are added here by status.js. -->
+            <!-- Loading and error messages are added here by status.js. -->
             <div id="map-messages" class="map-messages" role="status" aria-live="polite">
                 <div id="choose-banner" class="alert alert-primary choose-banner" hidden>
-                    <span>Tap the map or a study-space marker to set the search location.</span>
+                    <span>Tap the map or a study-space marker to set your starting point.</span>
                     <button type="button" id="cancel-choosing" class="btn btn-sm btn-light">Cancel</button>
                 </div>
                 <noscript><div class="alert alert-warning">The map needs JavaScript to be enabled.</div></noscript>
             </div>
 
-            <section class="map-legend card" aria-labelledby="legend-heading">
-                <h2 id="legend-heading" class="h6 mb-1">Legend <span class="fw-normal small">(shown)</span></h2>
+            <section class="map-legend" aria-labelledby="legend-heading">
+                <h2 id="legend-heading" class="visually-hidden">Legend</h2>
                 <ul>
                     <li><span class="space-marker space-marker--library" aria-hidden="true">L</span>
                         Library <span id="library-count" class="text-body-secondary"></span></li>
@@ -51,94 +182,6 @@
                 </ul>
             </section>
         </div>
-
-        <aside class="sidebar" aria-label="Search and filters">
-            <form id="search-form">
-                <section class="sidebar-section" aria-labelledby="location-heading">
-                    <h2 id="location-heading" class="h6">Search location</h2>
-                    <button type="button" id="choose-location" class="btn btn-outline-primary btn-sm w-100 mb-2" aria-pressed="false">
-                        Choose search location
-                    </button>
-                    <p id="location-text" class="small mb-2">No location chosen. Press the button above, then tap the map or a marker.</p>
-                    <label for="radius" class="form-label small mb-1">Search radius</label>
-                    <select id="radius" class="form-select form-select-sm mb-2">
-                        <option value="250">250 m</option>
-                        <option value="500">500 m</option>
-                        <option value="1000" selected>1 km</option>
-                        <option value="2000">2 km</option>
-                        <option value="5000">5 km</option>
-                    </select>
-                    <div class="d-grid gap-2">
-                        <button type="button" id="nearby-button" class="btn btn-primary btn-sm" disabled>Search within radius</button>
-                        <button type="button" id="nearest-button" class="btn btn-outline-primary btn-sm" disabled>Find nearest</button>
-                        <button type="button" id="clear-location" class="btn btn-outline-secondary btn-sm" disabled>Clear location and show all</button>
-                    </div>
-                </section>
-
-                <fieldset class="sidebar-section">
-                    <legend class="h6">Study-space type</legend>
-                    <div class="form-check form-check-inline">
-                        <input class="form-check-input" type="checkbox" name="type" value="library" id="type-library" checked>
-                        <label class="form-check-label" for="type-library">Libraries</label>
-                    </div>
-                    <div class="form-check form-check-inline">
-                        <input class="form-check-input" type="checkbox" name="type" value="cafe" id="type-cafe" checked>
-                        <label class="form-check-label" for="type-cafe">Cafés</label>
-                    </div>
-                </fieldset>
-
-                <fieldset class="sidebar-section" aria-describedby="facility-help">
-                    <legend class="h6">Confirmed facilities</legend>
-                    {% for facility in facility_filters %}
-                    <div class="form-check">
-                        {# Counts come from the database when the page loads; a facility nobody confirms is disabled. #}
-                        <input class="form-check-input" type="checkbox" name="facility" value="{{ facility.field }}"
-                               id="facility-{{ facility.field }}"{% if facility.confirmed == 0 %} disabled{% endif %}>
-                        <label class="form-check-label" for="facility-{{ facility.field }}">
-                            {{ facility.label }}
-                            {% if facility.confirmed == 0 %}<span class="small text-body-secondary">(no confirmed records yet)</span>
-                            {% elif facility.confirmed %}<span class="small text-body-secondary">({{ facility.confirmed }} confirmed)</span>{% endif %}
-                        </label>
-                    </div>
-                    {% endfor %}
-                    <p id="facility-help" class="form-text mb-0">
-                        Only places whose source confirms a facility are shown; unknown is never treated as yes.
-                        Libraries appear in every search without a facility filter, but their facilities are not yet
-                        recorded, so a facility filter hides them. Seating is not live availability.
-                    </p>
-                </fieldset>
-
-                <button type="button" id="reset-filters" class="btn btn-link btn-sm px-0">Reset filters</button>
-            </form>
-
-            <section class="sidebar-section" aria-labelledby="results-heading">
-                <h2 id="results-heading" class="h6">Results</h2>
-                <div aria-live="polite">
-                    <p id="results-summary" class="small mb-2">Loading study spaces…</p>
-                    <div id="results-list" class="list-group list-group-flush"></div>
-                </div>
-            </section>
-
-            <section class="sidebar-section" aria-labelledby="areas-heading">
-                <h2 id="areas-heading" class="h6">All Recorded Study Spaces by Area</h2>
-                <p class="form-text mt-0">
-                    Dataset-wide counts calculated by PostGIS. The search location, radius and filters above
-                    do not change these numbers.
-                </p>
-                <p id="area-status" class="small">Loading area statistics…</p>
-                <table id="area-table" class="table table-sm small mb-0" hidden>
-                    <thead>
-                        <tr>
-                            <th scope="col">Area</th>
-                            <th scope="col" class="text-end">Libraries</th>
-                            <th scope="col" class="text-end">Cafés</th>
-                            <th scope="col" class="text-end">Total</th>
-                        </tr>
-                    </thead>
-                    <tbody></tbody>
-                </table>
-            </section>
-        </aside>
     </main>
 </body>
 </html>

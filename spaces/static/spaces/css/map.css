@@ -1,20 +1,158 @@
+/* StudySmart interface. Bootstrap 5 supplies the base; these rules add the app layout and components. */
+
+/* Nunito (SIL Open Font License, see fonts/OFL.txt), served from this site: no third-party font request. */
+@font-face {
+    font-family: "Nunito";
+    font-style: normal;
+    font-weight: 200 1000;
+    font-display: swap;
+    src: url("../fonts/nunito-latin-wght-normal.woff2") format("woff2");
+}
+
 /*
- * Layout. Large screens: full-height map with a scrolling sidebar on the right.
- * Below 992px (tablets and phones): the map takes most of the screen and the
- * sidebar follows it, so the page scrolls normally.
+ * Palette: warm cream background, soft indigo accent, teal libraries and terracotta cafés.
+ * Text and marker colours keep at least 4.5:1 contrast against their backgrounds.
  */
-body.map-page {
+:root {
+    --ss-font: "Nunito", system-ui, -apple-system, "Segoe UI", sans-serif;
+    --ss-bg: #faf7f2;
+    --ss-surface: #ffffff;
+    --ss-border: #ece6dc;
+    --ss-text: #2b2a33;
+    --ss-text-muted: #6b6878;
+    --ss-accent: #5a54d6;
+    --ss-accent-dark: #4842b8;
+    --ss-accent-soft: #eeedfd;
+    --ss-library: #2a6f97;
+    --ss-library-soft: #e3f0f7;
+    --ss-cafe: #b4532a;
+    --ss-cafe-soft: #fbeae2;
+    --ss-yes: #2f7d52;
+    --ss-yes-soft: #e4f4ea;
+    --ss-highlight: #ffc93c;
+    --ss-radius: 16px;
+    --ss-shadow: 0 1px 2px rgba(60, 45, 20, 0.05), 0 4px 12px rgba(60, 45, 20, 0.06);
+    --ss-shadow-hover: 0 2px 4px rgba(60, 45, 20, 0.06), 0 8px 20px rgba(60, 45, 20, 0.1);
+    --ss-panel-width: 26rem;
+
+    /* Bootstrap's own variables, so its buttons, links and text use the same palette. */
+    --bs-body-font-family: var(--ss-font);
+    --bs-body-color: var(--ss-text);
+    --bs-body-bg: var(--ss-bg);
+    --bs-secondary-color: var(--ss-text-muted);
+    --bs-border-color: var(--ss-border);
+    --bs-primary: var(--ss-accent);
+    --bs-primary-rgb: 90, 84, 214;
+    --bs-link-color: var(--ss-accent);
+    --bs-link-color-rgb: 90, 84, 214;
+    --bs-link-hover-color: var(--ss-accent-dark);
+    --bs-link-hover-color-rgb: 72, 66, 184;
+    --bs-focus-ring-color: rgba(90, 84, 214, 0.3);
+}
+
+.btn-primary {
+    --bs-btn-bg: var(--ss-accent);
+    --bs-btn-border-color: var(--ss-accent);
+    --bs-btn-hover-bg: var(--ss-accent-dark);
+    --bs-btn-hover-border-color: var(--ss-accent-dark);
+    --bs-btn-active-bg: var(--ss-accent-dark);
+    --bs-btn-active-border-color: var(--ss-accent-dark);
+    --bs-btn-focus-shadow-rgb: 90, 84, 214;
+}
+
+.btn-outline-primary {
+    --bs-btn-color: var(--ss-accent);
+    --bs-btn-border-color: var(--ss-accent);
+    --bs-btn-hover-bg: var(--ss-accent);
+    --bs-btn-hover-border-color: var(--ss-accent);
+    --bs-btn-active-bg: var(--ss-accent-dark);
+    --bs-btn-active-border-color: var(--ss-accent-dark);
+    --bs-btn-disabled-color: var(--ss-accent);
+    --bs-btn-disabled-border-color: var(--ss-accent);
+    --bs-btn-focus-shadow-rgb: 90, 84, 214;
+}
+
+.btn {
+    --bs-btn-font-weight: 600;
+    border-radius: 999px;
+}
+
+.form-select {
+    background-color: var(--ss-surface);
+    border-color: var(--ss-border);
+    border-radius: 12px;
+}
+
+.form-select:focus {
+    border-color: var(--ss-accent);
+    box-shadow: 0 0 0 0.2rem var(--bs-focus-ring-color);
+}
+
+/* Leaflet sets its own font on the map, popups and controls. */
+.leaflet-container {
+    font-family: var(--ss-font);
+}
+
+/* ---------- Page layout ----------
+ * Large screens: header, then a fixed-height row of [scrolling panel | map].
+ * Below 992px: the page scrolls; .panel's two parts are laid out around the map
+ * (controls, map, results) using display: contents and order.
+ */
+body.app {
     display: flex;
     flex-direction: column;
     height: 100vh;
-    height: 100dvh; /* Excludes mobile browser toolbars where supported. */
+    height: 100dvh;
     margin: 0;
+    background: var(--ss-bg);
+}
+
+.app-header {
+    display: flex;
+    align-items: baseline;
+    gap: 0.75rem;
+    padding: 0.6rem 1rem;
+    background: var(--ss-surface);
+    border-bottom: 1px solid var(--ss-border);
+}
+
+.brand {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.5rem;
+    font-weight: 800;
+    font-size: 1.2rem;
+    letter-spacing: -0.01em;
+}
+
+.brand-mark {
+    display: inline-grid;
+    place-items: center;
+    width: 2rem;
+    height: 2rem;
+    border-radius: 10px;
+    background: linear-gradient(135deg, var(--ss-accent), #8b6fe0);
+    color: #fff;
+    font-size: 1rem;
+}
+
+.brand-tagline {
+    color: var(--ss-text-muted);
+    font-size: 0.875rem;
 }
 
 .app-layout {
     display: flex;
     flex: 1 1 auto;
     min-height: 0;
+}
+
+.panel {
+    flex: 0 0 var(--ss-panel-width);
+    overflow-y: auto;
+    padding: 1rem;
+    border-right: 1px solid var(--ss-border);
+    background: linear-gradient(180deg, #f6f1ff 0, var(--ss-bg) 14rem);
 }
 
 .map-wrapper {
@@ -28,23 +166,8 @@ body.map-page {
     inset: 0;
 }
 
-.sidebar {
-    flex: 0 0 22rem;
-    overflow-y: auto;
-    padding: 1rem;
-    border-left: 1px solid var(--bs-border-color);
-}
-
-.sidebar-section {
-    margin-bottom: 1.25rem;
-}
-
-.sidebar legend {
-    margin-bottom: 0.5rem;
-}
-
 @media (max-width: 991.98px) {
-    body.map-page {
+    body.app {
         height: auto;
     }
 
@@ -52,25 +175,320 @@ body.map-page {
         flex-direction: column;
     }
 
-    .map-wrapper {
-        flex: none;
-        height: 65vh;
-        height: 65dvh;
+    .panel {
+        display: contents; /* Its children become items of .app-layout, so they can be ordered. */
     }
 
-    .sidebar {
-        flex: none;
-        overflow-y: visible;
-        border-left: 0;
-        border-top: 1px solid var(--bs-border-color);
-    }
+    .panel-controls { order: 1; padding: 1rem 1rem 0; }
+    .map-wrapper { order: 2; flex: none; height: 55vh; height: 55dvh; }
+    .panel-results { order: 3; margin: 1rem; }
 }
 
-/* Panels float above the map; Leaflet's own controls use z-index 1000. */
+@media (max-width: 575.98px) {
+    .brand-tagline { display: none; }
+}
+
+/* ---------- Steps and controls ---------- */
+.step {
+    margin-bottom: 1rem;
+    padding: 1rem;
+    background: var(--ss-surface);
+    border: 1px solid var(--ss-border);
+    border-radius: var(--ss-radius);
+    box-shadow: var(--ss-shadow);
+}
+
+.step-title {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    margin-bottom: 0.75rem;
+    font-size: 1.05rem;
+    font-weight: 800;
+}
+
+.step-number {
+    display: inline-grid;
+    place-items: center;
+    width: 1.5rem;
+    height: 1.5rem;
+    border-radius: 50%;
+    background: var(--ss-accent-soft);
+    color: var(--ss-accent);
+    font-size: 0.8rem;
+    font-weight: 800;
+}
+
+.location-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.5rem;
+    margin-top: 0.75rem;
+}
+
+.location-actions .btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.35rem;
+}
+
+.icon {
+    width: 1.1em;
+    height: 1.1em;
+    fill: none;
+    stroke: currentColor;
+    stroke-width: 2;
+    stroke-linecap: round;
+    stroke-linejoin: round;
+}
+
+.location-status {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 0.5rem;
+    margin-top: 0.6rem;
+    font-size: 0.875rem;
+    color: var(--ss-text-muted);
+}
+
+.coverage-note,
+.location-error {
+    margin: 0.5rem 0 0;
+    padding: 0.5rem 0.65rem;
+    border-radius: 8px;
+    font-size: 0.8125rem;
+}
+
+.coverage-note { background: #fff6e0; color: #6b4e00; }
+.location-error { background: #fdecec; color: #8a1c1c; }
+
+/* Collapsible filters: the summary line shows the current choices when closed. */
+.filters-summary {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.25rem 0.75rem;
+    list-style: none;
+    cursor: pointer;
+}
+
+.filters-summary::-webkit-details-marker { display: none; }
+
+.filters-summary::after {
+    content: "▾";
+    color: var(--ss-text-muted);
+    transition: transform 0.15s;
+}
+
+.filters:not([open]) .filters-summary::after { transform: rotate(-90deg); }
+
+.filter-summary {
+    flex: 1 1 auto;
+    text-align: right;
+    font-size: 0.8125rem;
+    color: var(--ss-text-muted);
+}
+
+.filters-body { margin-top: 0.75rem; }
+
+.filter-group {
+    margin-bottom: 0.75rem;
+}
+
+.filter-legend {
+    float: none;
+    margin-bottom: 0.35rem;
+    font-size: 0.8125rem;
+    font-weight: 600;
+    color: var(--ss-text-muted);
+}
+
+.chip-row {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.4rem;
+}
+
+.chip {
+    --bs-btn-padding-y: 0.3rem;
+    --bs-btn-padding-x: 0.75rem;
+    --bs-btn-font-size: 0.8125rem;
+    border: 1px solid var(--ss-border);
+    border-radius: 999px;
+    background: var(--ss-surface);
+}
+
+.btn-check:checked + .chip {
+    background: var(--ss-accent-soft);
+    border-color: var(--ss-accent);
+    color: var(--ss-accent);
+}
+
+.btn-check:focus-visible + .chip {
+    box-shadow: 0 0 0 0.2rem var(--bs-focus-ring-color);
+}
+
+.chip-count {
+    color: var(--ss-text-muted);
+    font-size: 0.75rem;
+}
+
+.filter-help {
+    margin: 0.4rem 0 0;
+    font-size: 0.75rem;
+    color: var(--ss-text-muted);
+}
+
+/* ---------- Results ---------- */
+.results-summary {
+    font-size: 0.875rem;
+    color: var(--ss-text-muted);
+}
+
+.result-list {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    display: grid;
+    gap: 0.5rem;
+}
+
+.result-card {
+    display: flex;
+    gap: 0.75rem;
+    width: 100%;
+    padding: 0.6rem;
+    text-align: left;
+    background: var(--ss-surface);
+    border: 1px solid var(--ss-border);
+    border-radius: var(--ss-radius);
+    transition: border-color 0.15s, box-shadow 0.15s, transform 0.15s;
+}
+
+.result-card:hover {
+    border-color: #ddd3c4;
+    box-shadow: var(--ss-shadow-hover);
+    transform: translateY(-1px);
+}
+
+.result-card:focus-visible {
+    outline: 3px solid rgba(90, 84, 214, 0.45);
+    outline-offset: 1px;
+}
+
+.result-card[aria-current="true"] {
+    border-color: var(--ss-accent);
+    box-shadow: 0 0 0 2px var(--ss-accent-soft);
+}
+
+/* Category illustration, deliberately icon-like so it is not mistaken for a photo. */
+.result-thumb {
+    display: grid;
+    place-items: center;
+    flex: 0 0 3.5rem;
+    height: 3.5rem;
+    border-radius: 10px;
+}
+
+.result-thumb .icon { width: 1.75rem; height: 1.75rem; }
+.result-thumb--library { background: var(--ss-library-soft); color: var(--ss-library); }
+.result-thumb--cafe { background: var(--ss-cafe-soft); color: var(--ss-cafe); }
+
+.result-body {
+    display: flex;
+    flex-direction: column;
+    gap: 0.15rem;
+    min-width: 0;
+}
+
+.result-title {
+    display: flex;
+    align-items: baseline;
+    gap: 0.4rem;
+    font-weight: 600;
+    line-height: 1.25;
+}
+
+.result-number {
+    flex: none;
+    display: inline-grid;
+    place-items: center;
+    min-width: 1.35rem;
+    height: 1.35rem;
+    border-radius: 50%;
+    background: var(--ss-accent);
+    color: #fff;
+    font-size: 0.75rem;
+}
+
+.result-meta {
+    font-size: 0.8125rem;
+    color: var(--ss-text-muted);
+}
+
+.facility-list {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.25rem;
+    margin-top: 0.2rem;
+}
+
+.facility {
+    padding: 0.05rem 0.45rem;
+    border-radius: 999px;
+    font-size: 0.75rem;
+    background: #f3efe8;
+    color: var(--ss-text-muted);
+}
+
+.facility--yes { background: var(--ss-yes-soft); color: var(--ss-yes); }
+.facility--unknown { background: none; padding-left: 0; font-style: italic; }
+
+.results-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.5rem;
+    margin-top: 0.5rem;
+}
+
+/* Loading placeholders */
+.result-skeleton {
+    height: 4.8rem;
+    border-radius: var(--ss-radius);
+    background: linear-gradient(90deg, #f1ebe2 25%, #f8f4ee 50%, #f1ebe2 75%);
+    background-size: 200% 100%;
+    animation: shimmer 1.2s infinite;
+}
+
+@keyframes shimmer {
+    to { background-position: -200% 0; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .result-skeleton { animation: none; }
+    .result-card { transition: none; }
+    .result-card:hover { transform: none; }
+}
+
+.about-data {
+    margin-top: 1rem;
+    padding-top: 0.75rem;
+    border-top: 1px solid var(--ss-border);
+    font-size: 0.875rem;
+}
+
+.about-data summary {
+    font-weight: 600;
+    cursor: pointer;
+}
+
+/* ---------- Map overlays ---------- */
 .map-messages,
 .map-legend {
     position: absolute;
-    z-index: 1000;
+    z-index: 1000; /* Leaflet's own controls use 1000. */
 }
 
 .map-messages {
@@ -85,9 +503,9 @@ body.map-page {
     margin-bottom: 0.5rem;
     padding: 0.5rem 0.75rem;
     font-size: 0.875rem;
+    box-shadow: var(--ss-shadow);
 }
 
-/* "Choose search location" mode: a banner with Cancel, a blue frame and a crosshair cursor. */
 .choose-banner:not([hidden]) {
     display: flex;
     align-items: center;
@@ -95,29 +513,14 @@ body.map-page {
     gap: 0.5rem;
 }
 
-.map.map--choosing {
-    cursor: crosshair;
-}
-
-/* Drawn above the tiles; pointer-events: none lets clicks pass through to the map. */
-.map.map--choosing::after {
-    content: "";
-    position: absolute;
-    inset: 0;
-    z-index: 999;
-    border: 4px solid #0d6efd;
-    pointer-events: none;
-}
-
-.map--choosing .leaflet-marker-icon.leaflet-interactive {
-    cursor: crosshair;
-}
-
 .map-legend {
     left: 0.75rem;
     bottom: 1.75rem; /* Clears the attribution bar. */
-    padding: 0.5rem 0.75rem;
-    font-size: 0.875rem;
+    padding: 0.4rem 0.65rem;
+    font-size: 0.8125rem;
+    background: var(--ss-surface);
+    border-radius: 10px;
+    box-shadow: var(--ss-shadow);
 }
 
 .map-legend ul {
@@ -130,17 +533,31 @@ body.map-page {
     display: flex;
     align-items: center;
     gap: 0.4rem;
-    margin-bottom: 0.25rem;
+    margin: 0.15rem 0;
 }
 
 @media (max-width: 575.98px) {
-    .map-legend {
-        bottom: 2.75rem; /* The attribution wraps onto two lines on narrow screens. */
-        font-size: 0.8rem;
-    }
+    .map-legend { bottom: 2.75rem; } /* The attribution wraps onto two lines on narrow screens. */
 }
 
-/* Study-space markers differ in shape and letter as well as colour. */
+/* "Pick on map" mode: crosshair cursor and a blue frame drawn above the tiles. */
+.map.map--choosing { cursor: crosshair; }
+
+.map.map--choosing::after {
+    content: "";
+    position: absolute;
+    inset: 0;
+    z-index: 999;
+    border: 4px solid var(--ss-accent);
+    pointer-events: none; /* Clicks still reach the map. */
+}
+
+.map--choosing .leaflet-marker-icon.leaflet-interactive { cursor: crosshair; }
+
+/* ---------- Markers ----------
+ * Libraries are squares and cafés circles, so type never depends on colour alone.
+ * Before a search they show a letter; after a search, the result number.
+ */
 .space-marker {
     display: flex;
     align-items: center;
@@ -150,39 +567,23 @@ body.map-page {
     border: 2px solid #fff;
     box-shadow: 0 1px 3px rgba(0, 0, 0, 0.5);
     color: #fff;
-    font: bold 12px/1 system-ui, sans-serif;
+    font: 800 12px/1 var(--ss-font);
 }
 
-.space-marker--library {
-    background: #1f5fa8;
-    border-radius: 4px;
-}
+.space-marker--library { background: var(--ss-library); border-radius: 4px; }
+.space-marker--cafe { background: var(--ss-cafe); border-radius: 50%; }
 
-.space-marker--cafe {
-    background: #b8540b;
-    border-radius: 50%;
-}
-
-/* The nearest result: larger, with a yellow ring. Leaflet sets its size from iconSize. */
+/* The selected result: larger, with a yellow ring. Leaflet sets its size from iconSize. */
 .space-marker--highlight {
-    border: 3px solid #ffc107;
-    box-shadow: 0 0 0 3px #212529, 0 2px 6px rgba(0, 0, 0, 0.6);
-    font-size: 16px;
+    border: 3px solid var(--ss-highlight);
+    box-shadow: 0 0 0 3px var(--ss-text), 0 3px 8px rgba(0, 0, 0, 0.45);
+    font-size: 15px;
 }
 
-/* Popup content */
-.space-popup h2 {
-    font-size: 1rem;
-    margin: 0 0 0.25rem;
-}
-
-.space-popup p {
-    margin: 0 0 0.5rem;
-}
-
-.space-popup .popup-distance {
-    font-weight: 600;
-}
+/* ---------- Popups ---------- */
+.space-popup h2 { font-size: 1.05rem; font-weight: 800; margin: 0 0 0.25rem; }
+.space-popup p { margin: 0 0 0.5rem; }
+.space-popup .popup-distance { font-weight: 600; }
 
 .space-popup dl {
     display: grid;
@@ -191,17 +592,6 @@ body.map-page {
     margin: 0 0 0.5rem;
 }
 
-.space-popup dd {
-    margin: 0;
-}
-
-.space-popup .facility-unknown {
-    color: #6c757d;
-    font-style: italic;
-}
-
-.space-popup .popup-note {
-    color: #6c757d;
-    font-size: 0.75rem;
-    margin: 0;
-}
+.space-popup dd { margin: 0; }
+.space-popup .facility-unknown { color: var(--ss-text-muted); font-style: italic; }
+.space-popup .popup-note { color: var(--ss-text-muted); font-size: 0.75rem; margin: 0; }
