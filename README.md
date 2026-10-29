@@ -16,6 +16,8 @@ Issue #5 replaces the development home page with an interactive Leaflet map of a
 
 Issue #6 adds a search and filter sidebar to the map: radius and nearest searches from a clicked location, type and confirmed-facility filters, and per-area counts. It uses the existing Issue #3–5 endpoints without backend changes.
 
+Issue #15 redesigns the interface around a three-step flow: choose a starting point (a university campus, your current location, or a point on the map), adjust filters, and browse the 10 nearest matches as numbered cards linked to numbered map markers. It reuses the same API endpoints; there are no model, migration or API changes.
+
 StudySmart covers two categories only: libraries and cafés. University study spaces, mentioned in an early Issue #5 task, are out of scope; the model and migrations are unchanged.
 
 ## Architecture
@@ -650,8 +652,72 @@ These are acceptable for local development and must be addressed before any publ
 - There is no Content-Security-Policy header; pages load scripts from two pinned CDNs.
 - Coordinate ranges are enforced by model validation on every application route (API, admin, imports), not by a database constraint, so raw SQL could bypass them.
 
+## Frontend redesign (Issue #15)
+
+The page is a left panel (controls and results) beside the map. Below 992 px it stacks as controls, map, then results, and the Filters section starts collapsed with a one-line summary (for example "1.0 km · All types"), so the map is visible on the first screen of a phone.
+
+### Flow
+
+1. **Starting point.** One of:
+   - **University campus:** a fixed list in [spaces/universities.py](spaces/universities.py). Each point is the representative point of the campus's OpenStreetMap element (the element ID is recorded), retrieved on 2026-10-29. Campuses are search origins only; they are never stored as study spaces or returned by the API. UCD Belfield is outside the Dublin City Council data area (PostGIS: no study space within 1 km), so selecting it shows a coverage note; searching is still allowed.
+   - **Use my location:** browser geolocation. Permission denied, position unavailable and timeout (10 s) each show a specific message suggesting a campus or a map point instead. Browsers only allow geolocation on secure origins: it works at `http://localhost:8000`, but not when the dev server is opened from another device over plain HTTP, where the page explains this.
+   - **Pick on map:** the Issue #6 selection mode (tap the map or a marker; Cancel or Esc to stop).
+2. **Filters.** Distance (500 m, 1 km, 2 km, 5 km), type (Libraries, Cafés) and confirmed facilities, as toggle chips. Facility chips keep their database counts and are disabled when nothing confirms them.
+3. **Results.** Every change runs the search automatically with `/api/spaces/nearby/`. PostGIS returns all matches nearest first; the page shows the first 10 as cards and as numbered markers, and the summary states the total, for example "Showing 10 of 250 nearby study spaces (within 1.0 km), nearest first."
+   - Clicking a card highlights it and its marker, centres the map on the marker and opens its popup; on phones the page scrolls back to the map. Clicking a marker highlights its card (and scrolls the panel to it on large screens).
+   - Where markers overlap, the nearer (lower-numbered) result is drawn on top, and the selected result above all.
+   - **No matches:** the page offers **Search a wider area** (next radius) and **Show nearest match**, which uses `/api/spaces/nearest/` and draws a dashed line to the result.
+   - Before a starting point is chosen, the map shows all matching spaces, as before.
+
+### Result cards
+
+Each card shows the result number, name, type, PostGIS distance and a facility summary: confirmed facilities as green "✓" chips, confirmed absences as grey "No …" chips, and unknown values only as a count ("3 not recorded", or "Facilities not recorded" when all five are unknown). The thumbnail is a category illustration (a book or a cup icon, labelled "illustration (no photo available)"); the data contains no photographs, so none are shown or fetched.
+
+### Files
+
+| File | Role |
+| --- | --- |
+| [spaces/universities.py](spaces/universities.py) | Campus list with OpenStreetMap provenance |
+| [views.py](spaces/views.py) `home()` | Passes campuses, radius choices and facility counts to the template |
+| [home.html](spaces/templates/spaces/home.html) | Three-step panel, results list, collapsible "About the data" (area statistics and attribution), inline SVG icons |
+| [map.css](spaces/static/spaces/css/map.css) | Design tokens (warm cream background, indigo accent, teal libraries, terracotta cafés; text and markers keep at least 4.5:1 contrast), panel and responsive layout, chips, cards, markers |
+| [fonts/](spaces/static/spaces/fonts/) | Nunito variable font (39 KB, Latin), self-hosted so the page makes no third-party font request; SIL Open Font License in `OFL.txt` |
+| [search.js](spaces/static/spaces/js/search.js) | Starting point (campus, geolocation, map), filters, automatic search, cancelling superseded requests, card–marker selection |
+| [results.js](spaces/static/spaces/js/results.js) (new) | Result cards, facility summary, illustration, loading placeholders |
+| [markers.js](spaces/static/spaces/js/markers.js) | Numbered markers, highlighting and stacking order |
+
+### Verification
+
+| Check | Result |
+| --- | --- |
+| Django tests | 125 passed (121 previous plus 4 campus tests), also in shuffled order. Template tests now check the radius choices are within the API's limit, every control is labelled, and `results.js` never inserts HTML. Campus tests check every point is valid, in Dublin and traceable to an OSM element; that only UCD has a coverage note; that each campus is rendered with its coordinates; and that campuses are not study spaces. |
+| Scripted headless Edge test (37 checks, run twice) | All passed, including: card order and numbers equal the nearby API; numbered markers match cards; card facility chips match true/false/unknown in the API; card ↔ marker highlighting; overlapping markers stack nearest on top; filter changes and reset; UCD note, empty state, nearest fallback and wider area; geolocation granted, denied and unavailable; pick on map (point and marker); rapid campus changes; API failure and recovery; desktop, tablet (768 px) and phone (390 px) layouts with no horizontal scrolling, collapsed filters and the map on the first screen; no unexpected console errors |
+
+### Manual checks
+
+Desktop (≥ 992 px):
+
+1. The page opens with all spaces on the map and "657 study spaces match your filters".
+2. Choose **Trinity College Dublin**: "Showing 10 of … nearby study spaces", 10 cards and markers 1–10.
+3. Click card 3: the card and marker 3 are highlighted and the popup opens. Click marker 5: card 5 is highlighted and scrolled into view.
+4. Compare a card's chips with its popup: "✓" for Yes, "No …" for No, and unknown values only counted.
+5. Tick Indoor seating: results re-run; every popup shows indoor seating Yes. Click **Reset filters**.
+6. Choose **UCD Belfield**: the coverage note and "No study spaces…" appear. Click **Show nearest match**, then choose 1 km again and click **Search a wider area**.
+7. Click **Use my location** and allow it (results from your position), then repeat and block it in the browser's site settings (a "Location access was denied" message).
+8. Click **Pick on map**, then a map point; repeat and click a marker: the search starts there and no popup opens.
+9. Click **Clear**: all spaces return. Open **About the data**: the area table and attribution.
+
+Mobile (browser DevTools device mode at 390 × 844 and 768 × 1024; enable touch simulation). A real phone cannot reach this setup, because Compose publishes Django on `127.0.0.1` only; that is deliberate (see the Issue #7 security review). Device mode at `http://localhost:8000` also keeps geolocation available.
+
+1. Reload at that size: the campus selector, a collapsed **Filters** bar showing "1.0 km · All types", and the top of the map are on the first screen.
+2. Choose a campus: markers appear on the map; scroll down for the cards.
+3. Tap a card: the page scrolls back up to the map with the marker highlighted and its popup open.
+4. Open Filters, change the distance: the summary line and results update.
+5. Tap **Pick on map**: the page scrolls to the map with the blue frame and banner; tap a point.
+6. There is no sideways scrolling, and every control can be tapped comfortably.
+
 ## Development and attribution
 
 Follow [AGENTS.md](AGENTS.md). Imported data is source-reported and has not been independently surveyed.
 
-AI assistance was used for the initial documentation and Issues #1–7 implementation. The student must review, verify and understand the work, and document assistance according to the module policy.
+AI assistance was used for the initial documentation, Issues #1–7 and the Issue #15 redesign. The student must review, verify and understand the work, and document assistance according to the module policy.

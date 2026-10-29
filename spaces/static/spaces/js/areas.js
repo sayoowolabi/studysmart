@@ -19,7 +19,7 @@ export async function loadAreaBoundaries(map, url) {
     // L.geoJSON reads GeoJSON's [longitude, latitude] order itself.
     const boundaries = L.geoJSON(collection, {
         attribution: 'Boundaries: <a href="https://data.smartdublin.ie/dataset/administrative-areas-dcc">Dublin City Council</a> (CC BY)',
-        style: {color: "#5a3d8a", weight: 2, dashArray: "6 4", fill: false},
+        style: {color: "#7a6a8f", weight: 2, dashArray: "6 4", fill: false},
         onEachFeature: (feature, layer) => {
             const name = document.createElement("span");
             name.textContent = feature.properties.name;

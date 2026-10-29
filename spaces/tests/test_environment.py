@@ -14,6 +14,7 @@ from django.test import SimpleTestCase, TestCase, override_settings
 from django.urls import reverse
 
 from spaces.models import FACILITY_FIELDS, StudySpace
+from spaces.serializers import MAX_SEARCH_RADIUS_M
 
 
 @override_settings(ALLOWED_HOSTS=["testserver"])
@@ -44,12 +45,17 @@ class HomePageTests(TestCase):  # The page counts confirmed facilities, so it ne
         self.assertEqual(sorted(types), sorted(StudySpace.SpaceType.values))
         self.assertEqual(facilities, ["indoor_seating", "has_wifi", "has_outlets"])
         self.assertTrue(set(facilities) <= set(FACILITY_FIELDS))
+        # Every offered radius must be one the nearby API accepts (> 0 and within its maximum).
+        radii = [int(value) for value in re.findall(r'name="radius" value="(\d+)"', content)]
+        self.assertEqual(radii, [500, 1000, 2000, 5000])
+        self.assertTrue(all(0 < radius <= MAX_SEARCH_RADIUS_M for radius in radii))
+        self.assertRegex(content, r'name="radius" value="1000" id="radius-1000" checked')
 
     def test_every_form_control_has_a_label(self):
         content = self.client.get(reverse("spaces:home")).content.decode()
         control_ids = re.findall(r'<(?:input|select)[^>]*\bid="([^"]+)"', content)
         labelled_ids = set(re.findall(r'<label[^>]*\bfor="([^"]+)"', content))
-        self.assertIn("radius", control_ids)
+        self.assertTrue({"campus-select", "radius-1000", "type-cafe"} <= set(control_ids))
         self.assertEqual(set(control_ids) - labelled_ids, set())
 
     def test_location_selection_mode_controls(self):
@@ -77,8 +83,16 @@ class HomePageTests(TestCase):  # The page counts confirmed facilities, so it ne
         # Without a Referer the OSM tile server returns "Access blocked" tiles.
         self.assertIn('referrerPolicy: "strict-origin-when-cross-origin"', script)
 
+    def test_font_is_self_hosted_with_its_licence(self):
+        # Served from this site (no third-party font request) and shipped with its SIL OFL licence.
+        stylesheet = Path(finders.find("spaces/css/map.css")).read_text(encoding="utf-8")
+        self.assertIn('url("../fonts/nunito-latin-wght-normal.woff2")', stylesheet)
+        self.assertIsNotNone(finders.find("spaces/fonts/nunito-latin-wght-normal.woff2"))
+        licence = Path(finders.find("spaces/fonts/OFL.txt")).read_text(encoding="utf-8")
+        self.assertIn("SIL Open Font License", licence)
+
     def test_scripts_never_insert_api_data_as_html(self):
-        for name in ("api", "areas", "map", "markers", "search", "status"):
+        for name in ("api", "areas", "map", "markers", "results", "search", "status"):
             script = Path(finders.find(f"spaces/js/{name}.js")).read_text(encoding="utf-8")
             for unsafe in ("innerHTML", "outerHTML", "insertAdjacentHTML", "document.write"):
                 self.assertNotIn(unsafe, script, f"{name}.js uses {unsafe}")
