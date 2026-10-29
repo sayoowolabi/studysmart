@@ -59,7 +59,11 @@ if (process.platform === "linux" && process.env.CI) {
     // GitHub's Ubuntu runners restrict the user namespaces Chrome's sandbox needs.
     browserArgs.unshift("--no-sandbox");
 }
-const browser = spawn(findBrowser(), browserArgs, {stdio: "ignore"});
+const browser = spawn(findBrowser(), browserArgs, {stdio: ["ignore", "ignore", "pipe"]});
+let browserErrors = "";
+browser.stderr.on("data", (chunk) => {
+    browserErrors = (browserErrors + chunk).slice(-2000); // Kept to explain a failed start.
+});
 
 let socket;
 let nextId = 0;
@@ -76,10 +80,19 @@ function send(method, params = {}) {
 
 async function connect() {
     // With port 0 the browser picks a free port and writes it to DevToolsActivePort.
+    // Shared CI runners can take a while to start Chrome, so allow up to 30 seconds.
     const portFile = join(profileDir, "DevToolsActivePort");
-    for (let attempt = 0; attempt < 100 && !existsSync(portFile); attempt++) {
+    const deadline = Date.now() + 30000;
+    while (!existsSync(portFile)) {
+        // Exit code 0 is not a failure: Edge's msedge.exe on Windows hands over to a child process and exits.
+        const crashed = browser.exitCode !== null && browser.exitCode !== 0;
+        if (crashed || Date.now() > deadline) {
+            const reason = crashed ? `exited with code ${browser.exitCode}` : "did not start within 30 s";
+            throw new Error(`The browser ${reason}. Its last output:\n${browserErrors.trim() || "(none)"}`);
+        }
         await sleep(100);
     }
+    await sleep(100); // The browser writes the file in one go; give it a moment to finish.
     const port = readFileSync(portFile, "utf8").split("\n")[0].trim();
     let page;
     for (let attempt = 0; attempt < 50 && !page; attempt++) {
