@@ -25,7 +25,7 @@
     </svg>
 
     <header class="app-header">
-        <span class="brand"><span class="brand-mark" aria-hidden="true">S</span>StudySmart</span>
+        <h1 class="brand"><span class="brand-mark" aria-hidden="true">S</span>StudySmart</h1>
         <span class="brand-tagline">Find a library or café to study in Dublin</span>
     </header>
 
@@ -163,8 +163,9 @@
                  data-areas-url="{% url 'spaces:area-list' %}"
                  data-coverage-url="{% url 'spaces:area-coverage' %}"></div>
 
-            <!-- Loading and error messages are added here by status.js. -->
-            <div id="map-messages" class="map-messages" role="status" aria-live="polite">
+            <!-- Visual loading and error messages from status.js. Not a live region: the results summary
+                 announces search progress, and map-level warnings are announced individually as alerts. -->
+            <div id="map-messages" class="map-messages">
                 <div id="choose-banner" class="alert alert-primary choose-banner" hidden>
                     <span>Tap the map or a study-space marker to set your starting point.</span>
                     <button type="button" id="cancel-choosing" class="btn btn-sm btn-light">Cancel</button>

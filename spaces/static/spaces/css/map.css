@@ -118,6 +118,7 @@ body.app {
 
 .brand {
     display: inline-flex;
+    margin: 0; /* The brand is the page's <h1>; keep the header's size and spacing. */
     align-items: center;
     gap: 0.5rem;
     font-weight: 800;
