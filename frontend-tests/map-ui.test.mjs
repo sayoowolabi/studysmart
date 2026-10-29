@@ -191,6 +191,37 @@ const markerCentre = (label) => evaluate(`(() => {
     const box = marker.getBoundingClientRect();
     return {x: box.left + box.width / 2, y: box.top + box.height / 2};
 })()`);
+// A numbered result marker that a user could actually click: its centre is not covered by the
+// pick-mode banner, a control or another marker, and it has stopped moving (map animations finish).
+async function clickableResultMarker() {
+    let previous = "";
+    for (let attempt = 0; attempt < 30; attempt++) {
+        const found = await evaluate(`(() => {
+            for (const marker of document.querySelectorAll(".leaflet-marker-pane .space-marker")) {
+                const box = marker.getBoundingClientRect();
+                const x = box.left + box.width / 2, y = box.top + box.height / 2;
+                if (/^\\d+$/.test(marker.textContent) && document.elementFromPoint(x, y) === marker) {
+                    return {label: marker.textContent, x, y};
+                }
+            }
+            return null;
+        })()`);
+        const position = JSON.stringify(found);
+        if (found && position === previous) {
+            return found;
+        }
+        previous = position;
+        await sleep(150);
+    }
+    return null;
+}
+
+// Turns "Pick on map" on (the button toggles, so only press it when the mode is off).
+const startPicking = () => evaluate(`(() => {
+    const button = document.getElementById("choose-location");
+    if (button.getAttribute("aria-pressed") === "false") button.click();
+})()`);
+
 // A point on the map, near its centre, with no marker, popup or control on it.
 // Tiles may be blocked, so any bare part of the map counts.
 const emptyMapPoint = () => evaluate(`(() => {
@@ -377,17 +408,19 @@ async function run() {
     // which sets that space as the start without opening its popup; then a bare map point.
     await chooseCampus("tcd");
     check("Trinity results shown before picking", (await cards()).length === 10, await summary());
-    await click("choose-location");
+    await startPicking();
     check("pick-on-map mode is visible", await evaluate(`document.getElementById("map").classList.contains("map--choosing")
         && !document.getElementById("choose-banner").hidden`));
-    const firstCard = (await cards())[0];
-    await clickAt(await markerCentre("1"));
-    await waitFor(`document.getElementById("location-text").textContent.includes(${JSON.stringify(firstCard.name)})`, 5000);
+    const target = await clickableResultMarker();
+    const pickedCard = target && (await cards())[Number(target.label) - 1];
+    if (target) await clickAt(target);
+    await waitFor(`document.getElementById("location-text").textContent.includes(${JSON.stringify(pickedCard?.name ?? "")})`, 5000);
     await waitFor(searchDone);
-    check("marker click in pick mode starts from that study space", (await text("location-text")).includes(firstCard.name)
-        && !await evaluate(`!!document.querySelector(".leaflet-popup")`));
+    check("marker click in pick mode starts from that study space", Boolean(target)
+        && (await text("location-text")).includes(pickedCard.name)
+        && !await evaluate(`!!document.querySelector(".leaflet-popup")`), target ? `result ${target.label}` : "no clickable result marker");
     await sleep(500); // Leaflet animates the map to the new results.
-    await click("choose-location");
+    await startPicking();
     await clickAt(await emptyMapPoint());
     await waitFor(`document.getElementById("location-text").textContent.includes("map point")`, 5000);
     await waitFor(searchDone);
