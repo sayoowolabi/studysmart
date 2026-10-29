@@ -1,6 +1,7 @@
 # Runs the Django checks and test suite against PostGIS using the project's own
 # Dockerfile and docker-compose.yml, so CI uses the same Python, GDAL/GEOS/PROJ
-# and PostGIS versions as local development.
+# and PostGIS versions as local development; then runs the browser tests against
+# the running site with the source snapshots imported.
 name: Tests
 
 on:
@@ -48,9 +49,45 @@ jobs:
       - name: Run the test suite in random order
         run: docker compose run --rm -T web /usr/local/bin/python manage.py test spaces --shuffle --verbosity 2
 
-      - name: Show database logs on failure
+      # Browser tests need the running site with the committed source snapshots imported.
+      # Django's development server only serves the app's own JavaScript and CSS when
+      # DEBUG is on (see README), so this stage alone starts it with DJANGO_DEBUG=True.
+      - name: Start the web server and import the source snapshots
+        env:
+          DJANGO_DEBUG: "True"
+        run: |
+          docker compose up --detach web
+          docker compose exec -T web /usr/local/bin/python manage.py migrate --noinput
+          docker compose exec -T web /usr/local/bin/python manage.py import_administrative_areas --repair-invalid
+          docker compose exec -T web /usr/local/bin/python manage.py import_libraries
+          docker compose exec -T web /usr/local/bin/python manage.py import_cafes
+
+      - name: Wait for the web server
+        run: curl --silent --show-error --fail --retry 30 --retry-delay 2 --retry-all-errors --output /dev/null http://localhost:8000/
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      # No npm packages: the test drives the runner's preinstalled Google Chrome over the DevTools protocol.
+      - name: Browser tests (headless Chrome)
+        env:
+          STUDYSMART_URL: http://localhost:8000
+          BLOCK_MAP_TILES: "1"
+          SCREENSHOT_DIR: browser-screenshots
+        run: node frontend-tests/map-ui.test.mjs
+
+      - name: Keep browser screenshots on failure
         if: failure()
-        run: docker compose logs db
+        uses: actions/upload-artifact@v4
+        with:
+          name: browser-screenshots
+          path: browser-screenshots
+          if-no-files-found: ignore
+
+      - name: Show service logs on failure
+        if: failure()
+        run: docker compose logs db web
 
       - name: Stop the CI containers
         if: always()

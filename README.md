@@ -16,7 +16,7 @@ Issue #4 adds PostGIS-backed nearby and nearest searches and per-area library/ca
 
 Issue #5 replaces the development home page with an interactive Leaflet map of all libraries and cafés, loaded from the REST API, and adds a read-only `/api/areas/` GeoJSON endpoint for an optional boundary overlay.
 
-Issue #6 adds a search and filter sidebar to the map: radius and nearest searches from a clicked location, type and confirmed-facility filters, and per-area counts. It uses the existing Issue #3–5 endpoints without backend changes.
+Issue #6 adds radius and nearest searches, type and confirmed-facility filters, and per-area counts to the map, using the existing Issue #3–5 endpoints without backend changes. Issue #15 later reorganised these controls into the current three-step panel.
 
 Issue #15 redesigns the interface around a three-step flow: choose a starting point (a university campus, your current location, or a point on the map), adjust filters, and browse the 10 nearest matches as numbered cards linked to numbered map markers. It reuses the same API endpoints; there are no model, migration or API changes.
 
@@ -421,18 +421,18 @@ docker compose exec web /usr/local/bin/python manage.py shell -c "from spaces.mo
 
 Open [http://localhost:8000/](http://localhost:8000/). The page loads every study space from `/api/spaces/` in one request and shows:
 
-- **Libraries** as blue squares marked "L" and **cafés** as orange circles marked "C". Shape and letter differ as well as colour. Libraries are drawn above cafés so they are not hidden in the dense city centre. The legend shows how many of each were loaded.
+- **Libraries** as teal squares marked "L" and **cafés** as terracotta circles marked "C" (after a search, the 10 results show their result numbers instead). Shape and letter differ as well as colour. Libraries are drawn above cafés so they are not hidden in the dense city centre. The legend shows how many of each are on the map.
 - A **popup** for each marker with the name, type, address and the five facilities. `true` shows "Yes", `false` "No" and `null` "Unknown"; unknown is never shown as confirmed. Popups state that facilities are source-reported, not live availability, and name the record's source and licence.
 - An **Area boundaries** outline layer, off by default, toggled from the layer control (top right). Hovering a boundary shows the area name.
-- A **selected search location**: clicking the map places one temporary marker and shows its coordinates; Clear removes it. Issue #6 runs searches from this location.
+- A **search starting point**: originally a clicked map point; since Issue #15 a university campus, the current location or a point picked on the map (see [Frontend redesign](#frontend-redesign-issue-15)).
 - **Status messages** while loading, when no study spaces exist, and when either API request fails. A boundary failure does not affect the markers.
 
 ### Implementation
 
 | File | Role |
 | --- | --- |
-| [spaces/templates/spaces/home.html](spaces/templates/spaces/home.html) | Bootstrap layout, map container, legend, selection panel. API URLs come from `{% url %}` as `data-` attributes, so the JavaScript does not hard-code paths. |
-| [spaces/static/spaces/js/](spaces/static/spaces/js/) | Leaflet setup, API requests, markers, popups, boundary overlay and location selection; split into modules in Issue #6 (see below) |
+| [spaces/templates/spaces/home.html](spaces/templates/spaces/home.html) | Bootstrap layout, search panel, map container and legend. API URLs come from `{% url %}` as `data-` attributes, so the JavaScript does not hard-code paths. |
+| [spaces/static/spaces/js/](spaces/static/spaces/js/) | Leaflet setup, API requests, markers, popups, boundary overlay and search; ES modules (see [JavaScript modules](#javascript-modules)) |
 | [spaces/static/spaces/css/map.css](spaces/static/spaces/css/map.css) | Responsive layout, marker and popup styles |
 
 Leaflet 1.9.4 and Bootstrap 5.3.3 (CSS only) load from public CDNs at pinned versions with Subresource Integrity hashes, so the browser refuses a modified file. No build step, API key or paid tile service is used. Base tiles come from the OpenStreetMap tile server, which is suitable for light development use under its [tile usage policy](https://operations.osmfoundation.org/policies/tiles/). That policy requires browsers to send a `Referer` header. Django's default `Referrer-Policy: same-origin` sends none to other sites, so the tile layer alone uses `strict-origin-when-cross-origin`: tile requests carry only the site origin (for example `http://localhost:8000/`), never page paths, and the rest of the site keeps Django's stricter default. Without this, every tile shows "Access blocked".
@@ -464,8 +464,8 @@ Use a current browser with developer tools open on the Console tab.
 3. **Popup accuracy:** open `/api/spaces/?type=library` in another tab and compare one library's name, address and facilities with its popup. Libraries should show all five facilities as "Unknown". Find a café with confirmed indoor seating (`/api/spaces/?type=cafe&indoor_seating=true`) and check its popup says "Yes".
 4. **Coordinates:** confirm markers fall on Dublin streets, not in the sea or elsewhere in the world. Click a known library and compare its map position with its `latitude`/`longitude` in the API.
 5. **Boundaries:** tick *Area boundaries* in the layer control; five dashed outlines appear and show their names on hover. Untick to hide them.
-6. **Location selection:** click the map; a pin and coordinates appear. Click elsewhere; the pin moves. Click Clear; both disappear.
-7. **Responsive:** in device mode, check a phone (390 px), tablet (768 px) and desktop width, and rotate the phone. The map fills the screen below the navbar; the legend and attribution stay readable.
+6. **Starting point and responsive layout:** see the Issue #15 manual checks below; the original click-to-select pin and full-screen map layout were replaced there.
+7. **Legend and attribution:** at phone, tablet and desktop widths the legend and the attribution bar stay readable.
 8. **API failure:** run `docker compose stop db` and reload: a red "could not be loaded" message appears and the Console logs the HTTP error. Run `docker compose start db` and reload. DevTools *Offline* mode shows the library-load error instead.
 9. **Unsafe text:** log in at `/admin/`, create a manual study space through `/api/spaces/` named `<img src=x onerror=alert(1)>`, and check its popup shows the text literally with no alert. Delete the record afterwards.
 
@@ -481,23 +481,11 @@ Use a current browser with developer tools open on the Console tab.
 | Screenshots at phone and desktop widths | Map fills the viewport; legend, controls and attribution visible |
 | SRI hashes | Computed from the downloaded CDN files; they match Leaflet's and Bootstrap's published values |
 
-The first smoke check returned 404 for the new static files until the web server was restarted, as explained above. A test failed once because a code comment contained the word `innerHTML`, which the safe-display test searches for; the comment was reworded. Only step 1 of the manual checks was verified automatically (headless render); steps 2–9 require an interactive browser and are for the student to perform.
+This table records the Issue #5 interface at the time. The first smoke check returned 404 for the new static files until the web server was restarted, as explained above. A test failed once because a code comment contained the word `innerHTML`, which the safe-display test searches for; the comment was reworded. Only step 1 of the manual checks was verified automatically (headless render); steps 2–9 require an interactive browser and are for the student to perform.
 
 ## Search and filters (Issue #6)
 
-The sidebar (right on large screens, below the map on tablets and phones) contains:
-
-| Control | Behaviour |
-| --- | --- |
-| Choose search location | Starts selection mode: a blue frame, crosshair cursor and on-map banner with **Cancel** (Esc also cancels). The next tap on the map sets the search pin there; a tap on a library or café marker sets the pin at that marker's exact position instead of opening its popup. The mode then ends. On tablets and phones the page scrolls the map into view. Outside the mode, map clicks only pan and marker clicks open popups. |
-| Search radius | 250 m, 500 m, 1 km (default), 2 km or 5 km. A fixed list, so only values the API accepts (> 0 and ≤ 10,000 m) can be sent. |
-| Search within radius | Shows matching spaces within the radius, a circle showing the radius, and a nearest-first results list. Clicking a list item opens that marker's popup. |
-| Find nearest | Shows the single closest matching space, highlighted with a yellow ring and a "Nearest · distance" label, and a dashed line from the search pin. |
-| Clear location and show all | Removes the pin and returns to showing every matching space. |
-| Study-space type | Libraries and Cafés checkboxes. |
-| Confirmed facilities | Indoor seating, Wi-Fi, Power outlets. Each sends `<field>=true`, which matches only confirmed values, so unknown is never treated as yes. Each label shows how many records confirm it (see below). |
-| Reset filters | Re-ticks both types and clears all facility filters. |
-| All Recorded Study Spaces by Area | Library, café and total counts per area from `/api/areas/coverage/`. These are dataset-wide counts: the search location, radius and filters do not change them, and the sidebar says so. |
+Issue #6 added radius and nearest searches, filters and area statistics. Issue #15 later reorganised the controls into a three-step panel; this section describes how searching and filtering work now, and the [Frontend redesign](#frontend-redesign-issue-15) section describes the controls and layout.
 
 ### Facility filter availability
 
@@ -509,27 +497,28 @@ The filter becomes available automatically on the next page load after a confirm
 
 ### Search and filter flow
 
-The page is always in one of three modes. Every action re-runs the current mode with the current filters, so the same filters always apply to whatever is on the map:
+The page is always in one of three modes. Every change (starting point, distance, type or facility) re-runs the search with the current filters, so the same filters always apply to whatever is on the map:
 
-| Mode | Started by | Request |
+| Mode | When | Request |
 | --- | --- | --- |
-| All | Page load, *Clear location* | `GET /api/spaces/?<filters>` |
-| Nearby | *Search within radius* | `GET /api/spaces/nearby/?lat=&lng=&radius=&<filters>` |
-| Nearest | *Find nearest* | `GET /api/spaces/nearest/?lat=&lng=&<filters>` |
+| All | No starting point yet, or after *Clear* | `GET /api/spaces/?<filters>` |
+| Nearby | A starting point is set | `GET /api/spaces/nearby/?lat=&lng=&radius=&<filters>` |
+| Nearest | *Show nearest match*, offered when nothing is within the radius | `GET /api/spaces/nearest/?lat=&lng=&<filters>` |
 
-1. **Filters to parameters.** One function, `filterParams()` in `search.js`, builds the filters for all three modes. One ticked type sends `type=library` or `type=cafe`; both ticked sends no type filter (everything); none ticked sends no request and shows a warning. Each ticked facility adds `<field>=true`. The API combines all parameters with AND.
-2. **Re-running.** Changing a filter re-runs the current mode. Changing the radius re-runs a nearby search. Choosing a new location while a nearby or nearest search is shown re-runs that search from the new point.
-3. **Server-side spatial work.** Radius filtering, distance ordering and the nearest choice are done by PostGIS (`ST_DistanceSphere`), and the API returns `distance_m`. The browser only formats distances and draws the radius circle and line for display. It never decides which spaces are inside the radius.
+1. **Filters to parameters.** One function, `filterParams()` in `search.js`, builds the filters for all three modes. One selected type sends `type=library` or `type=cafe`; both selected sends no type filter (everything); none selected sends no request and shows a message. Each selected facility adds `<field>=true`. The API combines all parameters with AND.
+2. **Re-running.** Any filter change, a new starting point or *Reset filters* (which restores the defaults written in the page: 1 km, both types, no facilities) runs the search again in nearby mode.
+3. **Server-side spatial work.** Radius filtering, distance ordering and the nearest choice are done by PostGIS (`ST_DistanceSphere`), and the API returns `distance_m`. The browser only formats distances, takes the first 10 nearby results, and draws the radius circle and line for display. It never decides which spaces are inside the radius.
 4. **Rapid repeated searches.** Every search request cancels the previous one with an `AbortController`. An older, slower response therefore cannot overwrite a newer search. Cancelled requests are ignored silently.
-5. **Results.** Markers are replaced, the legend counts update to the markers shown, the sidebar shows a summary and, for searches, a list of up to 50 results with distances.
+5. **Results.** The 10 nearest matches appear as numbered cards and matching numbered markers; the summary gives the total, for example "Showing 10 of 250 nearby study spaces (within 1.0 km), nearest first."
 
 ### States and messages
 
-- **Loading:** "Loading study spaces…", "Searching nearby…" or "Finding the nearest study space…" over the map and in the sidebar.
-- **Empty:** for example "No study spaces match these filters within 1.0 km. Try a larger radius." When a facility filter is on, the message adds "Facility filters only include confirmed values." A nearest search with no match (`404`) is treated as an empty result, not an error.
-- **Error:** "Study spaces could not be loaded. Please try again." The error is logged to the console. The next successful search clears the message.
-- **No type selected:** "Select at least one study-space type."
-- Area statistics and boundaries load separately, so their failure never blocks searching.
+- **Loading:** "Loading study spaces…", "Searching nearby…" or "Finding the nearest match…", with placeholder cards. The results summary is the page's single live region, so screen readers announce progress once.
+- **Empty:** for example "No study spaces match your filters within 1.0 km. StudySmart covers the Dublin City Council area.", with *Search a wider area* and *Show nearest match*. When a facility filter is on, the message adds "Facility filters only include confirmed values." A nearest search with no match (`404`) is treated as an empty result, not an error.
+- **Error:** the summary reads "Study spaces could not be loaded. Change a filter or try again shortly." and a red alert appears on the map. The error is logged to the console; the next successful search clears it.
+- **No type selected:** "Select at least one type: Libraries or Cafés."
+- **Location errors:** separate messages for geolocation denied, unavailable and timed out, and for pages not served from a secure origin.
+- Area statistics and boundaries load separately, so their failure never blocks searching; map-level warnings are announced as alerts.
 
 ### JavaScript modules
 
@@ -539,46 +528,39 @@ The JavaScript uses native ES modules (`<script type="module">`), so there is no
 | --- | --- |
 | [map.js](spaces/static/spaces/js/map.js) | Entry point: creates the map and tile layer, starts the other modules |
 | [api.js](spaces/static/spaces/js/api.js) | `fetchJson` and HTTP error handling |
-| [search.js](spaces/static/spaces/js/search.js) | Sidebar state, location selection mode, filters, the three modes, cancelling superseded requests, results list |
-| [markers.js](spaces/static/spaces/js/markers.js) | Marker icons, highlighting, popups, distance formatting. Each marker has one click/Enter handler that asks `search.js` first (selection mode) and otherwise opens the popup. |
+| [search.js](spaces/static/spaces/js/search.js) | Starting point (campus, geolocation, pick on map), filters, the three modes, cancelling superseded requests, card–marker selection |
+| [results.js](spaces/static/spaces/js/results.js) | Result cards, honest facility summaries, category illustrations, loading placeholders |
+| [markers.js](spaces/static/spaces/js/markers.js) | Marker icons (letters or result numbers), highlighting, stacking order, popups, distance formatting. Each marker has one click/Enter handler that asks `search.js` first (pick-on-map mode or result selection) and otherwise opens the popup. |
 | [areas.js](spaces/static/spaces/js/areas.js) | Boundary overlay and the per-area statistics table |
-| [status.js](spaces/static/spaces/js/status.js) | Loading, empty and error messages over the map |
+| [status.js](spaces/static/spaces/js/status.js) | Loading and error messages over the map |
 
 All API text is inserted with `textContent` or as DOM elements, never as HTML strings. A test checks that no module uses `innerHTML`, `outerHTML`, `insertAdjacentHTML` or `document.write`.
 
 ### Data limitations
 
-- **Library facilities are unknown.** The DCC library CSV has no facility columns. Its description "free access to computers and the internet" does not establish Wi-Fi, outlets or laptop use (see [data-sources.md](docs/data-sources.md)), so all five facilities stay unknown rather than being guessed. Libraries appear in every search without a facility filter. A facility filter hides them, and the sidebar says why. Facilities can be added honestly only through manual verification: an admin edit or API PATCH with evidence notes, which also locks the values against reimport.
-- **Café facilities are sparse.** Among the 633 cafés, indoor seating is confirmed for 91 and Wi-Fi for 29. Power outlets: see the next point.
-- **Power outlets.** One café (Filo, OSM `way/970119309`) has `socket:bs1363=yes`. `bs1363` is OSM's key for the Irish/UK type G domestic socket, and OSM documents `socket:*` for "anywhere that electric power is supplied for the public or customers". The tag is on the café itself, not a separate charging point. Earlier imports ignored this socket key; the mapping now recognises it. `import_cafes --dry-run` reports exactly one update: Filo's `has_outlets` changes from unknown to true. Until the café import is re-run, no record confirms outlets and the filter is disabled; afterwards it shows "(1 confirmed)" automatically.
+- **Library facilities are unknown.** The DCC library CSV has no facility columns. Its description "free access to computers and the internet" does not establish Wi-Fi, outlets or laptop use (see [data-sources.md](docs/data-sources.md)), so all five facilities stay unknown rather than being guessed. Libraries appear in every search without a facility filter. A facility filter hides them, and the panel says why. Facilities can be added honestly only through manual verification: an admin edit or API PATCH with evidence notes, which also locks the values against reimport.
+- **Café facilities are sparse.** Among the 633 cafés, indoor seating is confirmed for 91, Wi-Fi for 29 and power outlets for 1.
+- **Power outlets.** One café (Filo, OSM `way/970119309`) has `socket:bs1363=yes`. `bs1363` is OSM's key for the Irish/UK type G domestic socket, and OSM documents `socket:*` for "anywhere that electric power is supplied for the public or customers". The tag is on the café itself, not a separate charging point. Imports before the Issue #6 follow-up ignored this socket key; the mapping now recognises it, so the outlet filter shows "(1 confirmed)". A database imported before that change shows "(no confirmed records yet)" until `import_cafes` is run again, which updates only Filo.
 - **Ambiguous OSM values stay unknown:** `indoor_seating=bar_table` (1 café) and `internet_access=yes` (16 cafés) do not explicitly confirm indoor seating or Wi-Fi.
 - **Quiet environment** has no source data or model field, so there is no filter for it; it is out of scope.
-- **University study spaces** are out of scope (see Current scope).
+- **University study spaces** are out of scope (see Current scope); campuses are only search starting points.
 - Area counts include all recorded spaces regardless of filters. Spaces outside every area are not counted.
 - Seating values are source-reported, not live occupancy.
-- Choosing a location by arbitrary map point needs a pointer or touch. Keyboard users can choose a marker's position: Tab to it and press Enter in selection mode.
+- Choosing an arbitrary map point needs a pointer or touch. Keyboard users can choose a campus, use their location, or in *Pick on map* mode Tab to a marker and press Enter.
 
-### Manual browser checks (Issue #6)
+### Manual browser checks
 
-1. **Initial state:** results say "Showing all 657 matching study spaces"; the area table shows five areas totalling 657. *Search within radius* and *Find nearest* are disabled.
-2. **Nearby:** click *Choose search location*, tap the map near the centre, choose 1 km, click *Search within radius*. A circle appears; the results list is nearest first; compare the count with `/api/spaces/nearby/?lat=…&lng=…&radius=1000` using the coordinates shown.
-3. **Radius:** change to 250 m; the search re-runs and the circle shrinks.
-4. **Combined filters:** untick Libraries, tick Indoor seating and Wi-Fi. Only cafés confirming both remain. Open a popup: both say "Yes".
-5. **Facility availability:** before re-running the café import, Power outlets is disabled with "no confirmed records yet". After `import_cafes`, reload: it shows "(1 confirmed)" and ticking it shows Filo when the search area includes it. With Indoor seating and Wi-Fi both ticked and no match, the warning explains that facility filters include only confirmed values.
-6. **Reset:** click *Reset filters*; both types are ticked, facilities cleared, and the earlier result count returns.
-7. **Nearest:** click *Find nearest*. One highlighted marker with a "Nearest · distance" label and a dashed line to the pin; the sidebar names it with the same distance. Untick Cafés: the nearest library is shown instead.
-8. **No type:** untick both types; a warning appears and no markers are shown.
-9. **Rapid clicks:** click *Find nearest* and *Search within radius* alternately several times quickly. The final display matches the last button pressed. In DevTools → Network, earlier requests show as cancelled.
-10. **API failure:** with a nearby search shown, run `docker compose stop db`, then change a filter: a red error appears. Run `docker compose start db` and change a filter again: results return and the error clears.
-11. **Responsive:** at desktop width the sidebar is on the right and scrolls on its own. At tablet (768 px) and phone (390 px) widths it appears below the map, and the page scrolls. All controls are reachable with the Tab key, and the checkboxes and radius are labelled.
-12. **Area statistics:** the heading reads "All Recorded Study Spaces by Area". Compare the table with `/api/areas/coverage/`, then change filters and run a search: the numbers do not change.
-13. **Selection mode:**
-    - Without pressing *Choose search location*, tap the map: nothing is selected. Tap a marker: its popup opens.
-    - Press *Choose search location*: a blue frame and banner appear. Press *Cancel*: they disappear. Repeat with Esc.
-    - Press it again and tap a café marker: no popup opens, the pin appears on the café, and the mode ends. *Find nearest* then shows that café at 0 m.
-    - On a phone width, scroll down to the sidebar and press the button: the page scrolls back to the map.
+The current manual checks are in the [Frontend redesign](#frontend-redesign-issue-15) section. Checks specific to searching and filtering:
+
+1. **Facility availability:** each facility chip shows its confirmed count; Power outlets shows "(1 confirmed)". Ticking it with *Pick on map* set near Filo (Prospect Road, Glasnevin) shows Filo.
+2. **Combined filters:** with Trinity College Dublin as the starting point, select only Cafés and tick Indoor seating and Wi-Fi. Every result's popup shows both as "Yes"; if none match, the message explains that facility filters include only confirmed values.
+3. **Rapid changes:** change the campus several times quickly. The final results match the last campus; in DevTools → Network, earlier requests show as cancelled.
+4. **API failure:** with results shown, run `docker compose stop db`, then change a filter: an error appears in the summary and on the map. Run `docker compose start db` and change a filter again: results return and the error clears.
+5. **Area statistics:** in *About the data*, the heading reads "All Recorded Study Spaces by Area". Compare the table with `/api/areas/coverage/`, then change filters and search: the numbers do not change.
 
 ## Issue #6 verification
+
+These tables record the Issue #6 interface at the time (a right-hand sidebar with *Search within radius* and *Find nearest* buttons), before Issue #15 reorganised it.
 
 | Check | Result |
 | --- | --- |
@@ -588,15 +570,15 @@ All API text is inserted with `textContent` or as DOM elements, never as HTML st
 | Scripted headless Edge test (25 checks, against the running app and imported data) | All passed: initial 657 markers; area table matches the coverage API; nearby (105 at 1 km) and 250 m counts equal the API; combined filters equal the API; outlets empty-state message; reset; nearest name, distance, highlight and label, with pin and result both on screen; nearest respects type; no-type warning; 8 rapid requests, 7 cancelled, last mode displayed; new location re-runs search; simulated HTTP 500 shows an error and recovers; clear location restores all; no unexpected console errors |
 | Screenshots at 1366 × 900 and 390 × 844 | Sidebar on the right on desktop and below the map on phone; highlighted nearest result, label, line and pin all visible |
 
-The scripted test lives outside the repository and is not part of the test suite. Two of its first-run failures were test problems (a click landing on a marker, and too short a wait for a slow response), not application faults; the network log confirmed superseded requests were cancelled. The screenshots showed one real issue: opening the nearest result's popup automatically panned the map and could push the search pin off screen, so a permanent distance label replaced the automatic popup. Manual checks 2 and 11 (keyboard and real devices) still need an interactive browser.
+At the time the scripted test lived outside the repository; its current version is [frontend-tests/map-ui.test.mjs](frontend-tests/map-ui.test.mjs), run in CI (see [Browser tests](#browser-tests)). Two of its first-run failures were test problems (a click landing on a marker, and too short a wait for a slow response), not application faults; the network log confirmed superseded requests were cancelled. The screenshots showed one real issue: opening the nearest result's popup automatically panned the map and could push the search pin off screen, so a permanent distance label replaced the automatic popup. Manual checks 2 and 11 (keyboard and real devices) still need an interactive browser.
 
 ### Data-quality and usability follow-up
 
 | Check | Result |
 | --- | --- |
 | Automated tests | All 103 passed: 96 previous plus 7 new. The new tests cover `bs1363` sockets (`yes`/count → true; `0`/`no`/conditional/conflicting → unknown), the API `=false` filter, the outlet checkbox being disabled when only false/unknown records exist and enabled with the correct count once records confirm it, filters staying enabled if the count query fails, the selection-mode controls, and the unfiltered area-statistics label. Home-page tests now use `TestCase` because the page queries the database. |
-| `import_cafes --dry-run` | `read=1090, created=0, updated=1, unchanged=632`. The only change is Filo `has_outlets` unknown → true, and Filo is not facility-locked. The rollback was confirmed: the database still has 0 confirmed outlets. The real import has **not** been run. |
-| Live page | Indoor seating "(91 confirmed)", Wi-Fi "(29 confirmed)", Power outlets disabled "(no confirmed records yet)" |
+| `import_cafes --dry-run` | `read=1090, created=0, updated=1, unchanged=632`. The only change is Filo `has_outlets` unknown → true, and Filo is not facility-locked. The rollback was confirmed. The real import was run afterwards (2026-10-29): `updated=1`, then `unchanged=633` on a repeat. |
+| Live page | Before the real import: Indoor seating "(91 confirmed)", Wi-Fi "(29 confirmed)", Power outlets disabled "(no confirmed records yet)". After it: Power outlets "(1 confirmed)", enabled. |
 | Scripted headless Edge test (33 checks) | All passed, including: map and marker clicks outside selection mode do not choose a location and markers open popups; the mode is visible (frame, banner, `aria-pressed`) and closes open popups; Cancel and Esc end it; a marker click in the mode opens no popup, ends the mode and chooses the marker's exact position (nearest search from it returns the same café at 0.5 m); the outlet checkbox state matches the API count; all previous Issue #6 checks |
 | Schema | No model, migration, serializer or API changes |
 
@@ -727,9 +709,24 @@ Mobile (browser DevTools device mode at 390 × 844 and 768 × 1024; enable touch
 1. validates the Compose file and builds the Django image;
 2. starts PostGIS and waits for its health check;
 3. runs `manage.py check`, `makemigrations --check --dry-run` and `manage.py test spaces --shuffle`;
-4. removes the CI containers and volumes.
+4. starts the web server, imports the committed source snapshots and runs the browser tests (below) in the runner's headless Chrome;
+5. on failure, keeps the browser screenshots and service logs; always removes the CI containers and volumes.
+
+The browser stage starts the web server with `DJANGO_DEBUG=True`, because Django's development server only serves the app's own JavaScript and CSS in debug mode (see [Static files and `DEBUG`](#static-files-and-debug)); the checks and unit tests run with `DEBUG=False`.
 
 First run (commit `573c3ca`, 2026-10-29): **passed** in about one minute. The log shows PostGIS healthy, no system-check issues, no missing migrations, and 129 tests passing in random order, including `test_postgis_is_available`. The same commands also pass locally with `DJANGO_DEBUG=False`; no application or settings changes were needed.
+
+### Browser tests
+
+[frontend-tests/map-ui.test.mjs](frontend-tests/map-ui.test.mjs) tests the map page in a real headless browser (38 checks): card order and numbers against the nearby API, numbered markers, honest facility chips, card and marker highlighting and stacking, filters and reset, the UCD empty state with nearest and wider-area fallbacks, geolocation granted/denied/unavailable, pick on map, rapid changes, API failure and recovery, the single `h1` and live region, the self-hosted font, and desktop/tablet/phone layouts. Expected values are read from the running API, so the checks follow the imported data.
+
+It uses Node's built-in WebSocket to drive Chrome, Chromium or Edge through the DevTools protocol, so it needs **no npm packages**. To run it locally, with the stack running and the snapshots imported:
+
+```powershell
+node frontend-tests/map-ui.test.mjs
+```
+
+This needs Node 22 or later and Chrome, Chromium or Edge (found automatically, or set `BROWSER` to its path). Optional settings: `STUDYSMART_URL` (default `http://localhost:8000`), `BLOCK_MAP_TILES=1` to avoid downloading OpenStreetMap tiles (CI does this, out of respect for the tile servers' usage policy; the checks do not need tiles) and `SCREENSHOT_DIR` to save screenshots. It prints one line per check and exits with code 1 if any check fails.
 
 ### Clean-install verification
 
@@ -757,13 +754,13 @@ Every command used `docker compose -p studysmart-fresh …`.
 | The three imports again | All `unchanged`; no duplicates |
 | `check --database default`, `pip check`, `showmigrations`, `test spaces` | No issues; no broken requirements; migration applied; 129 tests passed |
 | HTTP checks on port 18000 | Page, scripts, stylesheet, font and all API endpoints 200; anonymous POST 403; coverage totals 657; nearby search from Trinity returns 250 within 1 km |
-| Scripted headless browser check (40 checks) | All passed |
+| Scripted headless browser check (40 checks; now [frontend-tests/map-ui.test.mjs](frontend-tests/map-ui.test.mjs)) | All passed |
 | Existing development stack afterwards | Unchanged: same containers, ports, volumes and row counts |
 
 **Findings.**
 
 - No hidden dependency on local files or existing database state: everything needed (code, migrations, source snapshots, identity maps, manifest) is in Git.
-- A fresh import includes the Issue #6 follow-up `socket:bs1363` mapping, so one café (Filo) has confirmed power outlets and the outlet filter shows "(1 confirmed)". An existing database shows "(no confirmed records yet)" until `import_cafes` is run again.
+- A fresh import includes the Issue #6 follow-up `socket:bs1363` mapping, so one café (Filo) has confirmed power outlets and the outlet filter shows "(1 confirmed)". A database imported before that change needs `import_cafes` once more; the development database was updated this way on 2026-10-29 (one record changed).
 - The top-level `name: studysmart` and fixed host ports mean a second copy needs a different project name and an override file, as above.
 - The first build downloads the base images and Python packages and needs internet access; later starts do not.
 
