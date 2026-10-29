@@ -11,7 +11,9 @@ from .serializers import (
     NearbyQuerySerializer, PointQuerySerializer, StudySpaceDistanceSerializer,
     StudySpaceSerializer,
 )
-from .spatial import area_coverage, nearest_space, search_point, spaces_within
+from .spatial import (
+    area_boundaries, area_coverage, nearest_space, search_point, spaces_within,
+)
 
 # "unknown" matches SQL NULL, so unknown facilities are never treated as true or false.
 FACILITY_FILTER_VALUES = {"true": True, "false": False, "unknown": None}
@@ -101,3 +103,12 @@ class AreaCoverageView(APIView):
 
     def get(self, request):
         return Response(area_coverage())
+
+
+class AreaBoundaryView(APIView):
+    """GET /api/areas/: administrative-area outlines as GeoJSON for the map overlay."""
+
+    permission_classes = [AllowAny]
+
+    def get(self, request):
+        return Response(area_boundaries())

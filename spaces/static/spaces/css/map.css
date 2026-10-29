@@ -1,0 +1,133 @@
+/* Full-screen map layout: the navbar takes its natural height and the map fills the rest. */
+body.map-page {
+    display: flex;
+    flex-direction: column;
+    height: 100vh;
+    height: 100dvh; /* Excludes mobile browser toolbars where supported. */
+    margin: 0;
+}
+
+.map-wrapper {
+    position: relative;
+    flex: 1 1 auto;
+    min-height: 0;
+}
+
+.map {
+    position: absolute;
+    inset: 0;
+}
+
+/* Panels float above the map; Leaflet's own controls use z-index 1000. */
+.map-messages,
+.map-panel {
+    position: absolute;
+    z-index: 1000;
+}
+
+.map-messages {
+    top: 0.75rem;
+    left: 50%;
+    transform: translateX(-50%);
+    /* Leave room for the zoom control (left) and layer control (right). */
+    width: min(28rem, calc(100% - 8rem));
+}
+
+.map-messages .alert {
+    margin-bottom: 0.5rem;
+    padding: 0.5rem 0.75rem;
+    font-size: 0.875rem;
+}
+
+.map-panel {
+    left: 0.75rem;
+    bottom: 1.75rem; /* Clears the attribution bar. */
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+    max-width: calc(100% - 1.5rem);
+    font-size: 0.875rem;
+}
+
+.map-panel .card {
+    padding: 0.5rem 0.75rem;
+}
+
+.map-legend {
+    list-style: none;
+    margin: 0 0 0.25rem;
+    padding: 0;
+}
+
+.map-legend li {
+    display: flex;
+    align-items: center;
+    gap: 0.4rem;
+    margin-bottom: 0.25rem;
+}
+
+.map-hint {
+    color: var(--bs-secondary-color);
+}
+
+/* Study-space markers differ in shape and letter as well as colour. */
+.space-marker {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 24px;
+    height: 24px;
+    border: 2px solid #fff;
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.5);
+    color: #fff;
+    font: bold 12px/1 system-ui, sans-serif;
+}
+
+.space-marker--library {
+    background: #1f5fa8;
+    border-radius: 4px;
+}
+
+.space-marker--cafe {
+    background: #b8540b;
+    border-radius: 50%;
+}
+
+/* Popup content */
+.space-popup h2 {
+    font-size: 1rem;
+    margin: 0 0 0.25rem;
+}
+
+.space-popup p {
+    margin: 0 0 0.5rem;
+}
+
+.space-popup dl {
+    display: grid;
+    grid-template-columns: auto auto;
+    gap: 0.1rem 0.75rem;
+    margin: 0 0 0.5rem;
+}
+
+.space-popup dd {
+    margin: 0;
+}
+
+.space-popup .facility-unknown {
+    color: #6c757d;
+    font-style: italic;
+}
+
+.space-popup .popup-note {
+    color: #6c757d;
+    font-size: 0.75rem;
+    margin: 0;
+}
+
+@media (max-width: 575.98px) {
+    .map-panel {
+        bottom: 2.75rem; /* The attribution wraps onto two lines on narrow screens. */
+        font-size: 0.8rem;
+    }
+}

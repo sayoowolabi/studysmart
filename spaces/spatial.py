@@ -1,5 +1,7 @@
 """Spatial queries for the API. All geometry work runs in PostGIS, not Python."""
-from django.contrib.gis.db.models.functions import Distance
+import json
+
+from django.contrib.gis.db.models.functions import AsGeoJSON, Distance
 from django.contrib.gis.geos import Point
 from django.contrib.gis.measure import D
 from django.db.models import Count, Subquery
@@ -49,3 +51,29 @@ def area_coverage():
             "total_count": sum(counts.values()),
         })
     return coverage
+
+
+# Five decimal places of a degree is about 1 m, which is ample for a map outline and
+# makes the response roughly a quarter smaller than full precision.
+BOUNDARY_PRECISION = 5
+
+
+def area_boundaries():
+    """Administrative-area outlines as a GeoJSON FeatureCollection, ordered by area name."""
+    # PostGIS writes the geometry JSON (ST_AsGeoJSON). GeoJSON positions are
+    # [longitude, latitude], which Leaflet's L.geoJSON reads correctly.
+    areas = AdministrativeArea.objects.annotate(
+        geojson=AsGeoJSON("boundary", precision=BOUNDARY_PRECISION),
+    ).values("id", "source_id", "name", "geojson")
+    return {
+        "type": "FeatureCollection",
+        "features": [
+            {
+                "type": "Feature",
+                "id": area["id"],
+                "geometry": json.loads(area["geojson"]),
+                "properties": {"source_id": area["source_id"], "name": area["name"]},
+            }
+            for area in areas
+        ],
+    }
