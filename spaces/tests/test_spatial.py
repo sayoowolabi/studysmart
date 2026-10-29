@@ -76,6 +76,20 @@ class NearbyTests(APITestCase):
         nearest = self.client.get(search(NEAREST_URL, indoor_seating="true", has_wifi="true"))
         self.assertEqual(nearest.data["name"], "Seated Wi-Fi Cafe")
 
+    def test_maximum_radius_is_accepted(self):
+        response = self.client.get(search(NEARBY_URL, radius=10000))
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(len(response.data), 3)
+
+    def test_unknown_seating_filter_combines_with_type_and_radius(self):
+        make_space("Standing Cafe", ORIGIN_LAT + 0.003, indoor_seating=False)
+        make_space("Far Unknown Cafe", ORIGIN_LAT + 0.05)  # about 5.6 km away
+        names = lambda **filters: [i["name"] for i in self.client.get(search(NEARBY_URL, radius=2000, **filters)).data]
+        # Unknown matches only NULL: not the confirmed or "no" seating, and nothing beyond the radius.
+        self.assertEqual(names(indoor_seating="unknown"), ["Origin Library", "Unknown-Seat Cafe"])
+        self.assertEqual(names(type="cafe", indoor_seating="unknown"), ["Unknown-Seat Cafe"])
+        self.assertEqual(names(type="cafe", indoor_seating="false"), ["Standing Cafe"])
+
     def test_no_matches_returns_empty_list(self):
         response = self.client.get(search(NEARBY_URL, lat=53.0, radius=1000))
         self.assertEqual(response.status_code, 200)
@@ -133,6 +147,18 @@ class NearestTests(APITestCase):
     def test_invalid_coordinates_are_rejected(self):
         self.assertEqual(self.client.get(search(NEAREST_URL, lat=-90.1)).status_code, 400)
 
+    def test_missing_parameters_and_invalid_filters_are_rejected(self):
+        for url, fields in (
+            (NEAREST_URL, {"lat", "lng"}),
+            (NEAREST_URL + "?lng=-6.26", {"lat"}),
+            (search(NEAREST_URL, has_wifi="sometimes"), {"has_wifi"}),
+            (search(NEAREST_URL, type="university"), {"type"}),
+        ):
+            with self.subTest(url=url):
+                response = self.client.get(url)
+                self.assertEqual(response.status_code, 400)
+                self.assertEqual(set(response.data), fields)
+
 
 class CoverageTests(APITestCase):
     def setUp(self):
@@ -160,6 +186,23 @@ class CoverageTests(APITestCase):
             set(response.data[0]),
             {"id", "source_id", "name", "library_count", "cafe_count", "total_count"},
         )
+
+    def test_containment_uses_the_exact_polygon_not_its_bounding_box(self):
+        # An L-shaped area: its bounding box includes the empty top-right notch.
+        l_shape = Polygon((
+            (-5.00, 53.00), (-4.90, 53.00), (-4.90, 53.05), (-4.95, 53.05),
+            (-4.95, 53.10), (-5.00, 53.10), (-5.00, 53.00),
+        ), srid=4326)
+        AdministrativeArea.objects.create(
+            name="L-Shape", source_id="l-shape", boundary=MultiPolygon(l_shape, srid=4326),
+        )
+        make_space("Lower Arm Cafe", 53.02, -4.92)
+        make_space("Upper Arm Library", 53.08, -4.98, space_type="library")
+        make_space("Corner Cafe", 53.00, -5.00)           # on a vertex: covered
+        make_space("Notch Cafe", 53.08, -4.92)            # inside the bounding box only
+        make_space("Just Outside Cafe", 53.02, -5.00001)  # about 0.7 m west of the edge
+        area = next(a for a in self.client.get(COVERAGE_URL).data if a["name"] == "L-Shape")
+        self.assertEqual((area["library_count"], area["cafe_count"], area["total_count"]), (1, 2, 3))
 
     def test_area_without_spaces_has_zero_counts(self):
         make_area("Empty", (-5.0, 53.0, -4.9, 53.1))

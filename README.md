@@ -140,6 +140,7 @@ Tests cover:
 - spatial searches using known geometries
 - the boundary GeoJSON endpoint and the map page (API URLs, static assets, pinned CDN hashes, attribution)
 - the search interface (filter controls match API parameters, labelled controls, no HTML insertion, combined facility filters)
+- the Issue #7 additions: updates, read-only provenance fields, per-operation permissions, anonymous write attempts on every endpoint, HTTP errors, exact polygon containment, host and security-header configuration (see the Issue #7 section)
 
 Database tests create a separate test database and remove it afterwards; they do not delete the application database. Import tests use clearly fictional fixtures and make no network calls.
 
@@ -595,8 +596,62 @@ The scripted test lives outside the repository and is not part of the test suite
 | Scripted headless Edge test (33 checks) | All passed, including: map and marker clicks outside selection mode do not choose a location and markers open popups; the mode is visible (frame, banner, `aria-pressed`) and closes open popups; Cancel and Esc end it; a marker click in the mode opens no popup, ends the mode and chooses the marker's exact position (nearest search from it returns the same café at 0.5 m); the outlet checkbox state matches the API count; all previous Issue #6 checks |
 | Schema | No model, migration, serializer or API changes |
 
+## Testing and security review (Issue #7)
+
+### Test suite
+
+121 Django tests run against a separate PostGIS test database (the PostGIS engine is fixed in settings; one test queries `PostGIS_Version()`). They use fictional points and polygons with known distances and containment, synthetic import fixtures copied to a temporary folder, and no network access. The suite passes in default order and in shuffled order (`--shuffle`), so tests do not depend on each other.
+
+```powershell
+docker compose exec web /usr/local/bin/python manage.py test spaces
+docker compose exec web /usr/local/bin/python manage.py test spaces --shuffle
+```
+
+Issue #7 audited the existing 103 tests and added 18 for the gaps found:
+
+| Area | New tests |
+| --- | --- |
+| CRUD updates | A PATCH of a manual record updates the name and one coordinate and keeps the other; invalid PATCH values (latitude 91, text longitude, `university` type, blank name, facility `maybe`) return 400 and leave the record unchanged |
+| Create validation | Invalid `space_type` and facility values return 400; `null` is stored as unknown without locking |
+| Provenance | Read-only fields (`source_kind`, `source_id`, `facility_import_locked`, timestamps) sent by a client are ignored, so a record cannot pretend to be imported (which would make it undeletable) |
+| Permissions | A user with only *add* permission can create but cannot PATCH or DELETE; anonymous POST/PUT/PATCH/DELETE on every API URL returns 403 or 405 and changes nothing |
+| HTTP errors | PUT 405; PATCH/DELETE of a missing record 404; malformed JSON 400 |
+| Spatial | Nearest with missing `lat`/`lng`, invalid facility or type: 400 naming the field; radius 10,000 m (the maximum) accepted; `indoor_seating=unknown` in a radius search returns only unknown records, combined with type and radius |
+| Containment | An L-shaped area counts points in both arms and on a vertex, but not in the notch inside its bounding box, nor 0.7 m outside an edge, so exact `ST_CoveredBy` geometry is used, not an approximation |
+| Configuration | A missing database password is rejected; default `ALLOWED_HOSTS` is exactly `localhost`, `127.0.0.1` and `[::1]`; blank host entries are ignored; pages and the API send `X-Frame-Options: DENY`, `nosniff`, `Referrer-Policy: same-origin` and `Cross-Origin-Opener-Policy: same-origin` |
+
+### Security review
+
+| Area | Finding |
+| --- | --- |
+| Secrets | `DJANGO_SECRET_KEY` and database credentials come only from environment variables; missing values and `change-me` placeholders stop Django starting. `.env` is ignored by Git and Docker and has never been committed; only `.env.example` is tracked. |
+| `DEBUG` / hosts | `DEBUG` defaults to `False` and accepts only `True`/`False`. Hosts default to the three local names, with no wildcard; a request with another `Host` header returns 400. |
+| Authentication and CSRF | Session authentication only (Basic disabled over HTTP); writes need the matching Django model permission and a CSRF token. |
+| Write endpoints | Only `/api/spaces/` and `/api/spaces/{id}/` accept writes, and only with permission. Nearby, nearest, `/api/areas/` and `/api/areas/coverage/` are read-only. |
+| Docker | Django and pgAdmin are published on `127.0.0.1` only; PostgreSQL has no host port and is reachable only on the project network. The Django container runs as an unprivileged user. |
+| Browser | Popups and lists insert API text with `textContent`; CDN files are pinned with SRI hashes; responses deny framing. |
+
+`manage.py check --deploy` reports:
+
+| Warning | Meaning | Status |
+| --- | --- | --- |
+| `security.W018` | `DEBUG` is `True` | **Local development only.** It comes from `.env`; it disappears with `DJANGO_DEBUG=False`, which production must use. |
+| `security.W004` (HSTS), `W008` (SSL redirect), `W012` / `W016` (secure-only session and CSRF cookies) | The site is not served over HTTPS | **Production requirement.** These settings only work behind HTTPS, which the local `http://localhost` setup does not have. A production deployment must add HTTPS and then enable them. They are not vulnerabilities on a loopback-only development server. |
+
+No other deployment warnings are reported (for example, no weak-secret warning). No settings were changed in Issue #7.
+
+### Remaining risks
+
+These are acceptable for local development and must be addressed before any public deployment:
+
+- The development server (`runserver`) and plain HTTP are used, and HTTPS settings are off (see above).
+- Django connects as the PostgreSQL superuser created by the image; production needs a restricted role.
+- There is no rate limiting, pagination or admin login throttling; the dataset is 657 records.
+- There is no Content-Security-Policy header; pages load scripts from two pinned CDNs.
+- Coordinate ranges are enforced by model validation on every application route (API, admin, imports), not by a database constraint, so raw SQL could bypass them.
+
 ## Development and attribution
 
-Follow [AGENTS.md](AGENTS.md). Issue #6 adds the search interface only; testing and security review belong to Issue #7. Imported data is source-reported and has not been independently surveyed.
+Follow [AGENTS.md](AGENTS.md). Imported data is source-reported and has not been independently surveyed.
 
-AI assistance was used for the initial documentation and Issues #1–6 implementation. The student must review, verify and understand the work, and document assistance according to the module policy.
+AI assistance was used for the initial documentation and Issues #1–7 implementation. The student must review, verify and understand the work, and document assistance according to the module policy.

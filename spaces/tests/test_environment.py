@@ -121,6 +121,21 @@ class HomePageTests(TestCase):  # The page counts confirmed facilities, so it ne
             self.assertNotIn("disabled", checkbox)
         self.assertNotIn("confirmed records yet", content)
 
+    def test_security_headers_on_pages_and_api(self):
+        # SecurityMiddleware: nosniff, Referrer-Policy and Cross-Origin-Opener-Policy (Django defaults);
+        # XFrameOptionsMiddleware: DENY, so other sites cannot frame the map or the API.
+        expected = {
+            "X-Frame-Options": "DENY",
+            "X-Content-Type-Options": "nosniff",
+            "Referrer-Policy": "same-origin",
+            "Cross-Origin-Opener-Policy": "same-origin",
+        }
+        for url in (reverse("spaces:home"), reverse("spaces:studyspace-list")):
+            response = self.client.get(url)
+            for header, value in expected.items():
+                with self.subTest(url=url, header=header):
+                    self.assertEqual(response.headers.get(header), value)
+
     def test_unknown_host_is_rejected(self):
         response = self.client.get("/", HTTP_HOST="unrecognised.invalid")
         self.assertEqual(response.status_code, 400)
@@ -141,7 +156,8 @@ class DatabaseConnectionTests(TestCase):
 
 
 class SettingsEnvironmentTests(SimpleTestCase):
-    def load_settings(self, **overrides):
+    def load_settings(self, setting="DEBUG", **overrides):
+        """Imports the settings in a fresh process with the given environment; prints one setting."""
         environment = os.environ.copy()
         environment.pop("DJANGO_DEBUG", None)
         for name, value in overrides.items():
@@ -150,7 +166,7 @@ class SettingsEnvironmentTests(SimpleTestCase):
             else:
                 environment[name] = value
         return subprocess.run(
-            [sys.executable, "-c", "from studysmart.settings import DEBUG; print(DEBUG)"],
+            [sys.executable, "-c", f"from studysmart.settings import {setting}; print({setting})"],
             env=environment,
             capture_output=True,
             text=True,
@@ -181,3 +197,18 @@ class SettingsEnvironmentTests(SimpleTestCase):
         result = self.load_settings(DJANGO_SECRET_KEY="change-me-placeholder")
         self.assertNotEqual(result.returncode, 0)
         self.assertIn("Set DJANGO_SECRET_KEY", result.stderr)
+
+    def test_missing_database_password_is_rejected(self):
+        result = self.load_settings(POSTGRES_PASSWORD=None)
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("Set POSTGRES_PASSWORD", result.stderr)
+
+    def test_default_allowed_hosts_are_local_only(self):
+        result = self.load_settings("ALLOWED_HOSTS", DJANGO_ALLOWED_HOSTS=None)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(result.stdout.strip(), "['localhost', '127.0.0.1', '[::1]']")
+
+    def test_allowed_hosts_list_ignores_blank_entries(self):
+        result = self.load_settings("ALLOWED_HOSTS", DJANGO_ALLOWED_HOSTS=" example.org, ,localhost ")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(result.stdout.strip(), "['example.org', 'localhost']")
