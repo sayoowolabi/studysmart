@@ -148,7 +148,7 @@ The original OSM tags are retained in `source_attributes.tags`. Libraries retain
 | `indoor_seating` | `indoor_seating=yes/no`; `bar_table` and unsupported values remain unknown |
 | `outdoor_seating` | `yes/no`; documented seating-location values such as `sidewalk`, `terrace`, `patio` and `garden` indicate presence; supported positive semicolon combinations are accepted |
 | `has_wifi` | `internet_access=wlan` (including supported combinations) and explicit `wifi=yes/free` establish presence; `internet_access=no` or `wifi=no` establish absence unless contradicted |
-| `has_outlets` | Explicit `power_supply=yes/no`, or positive counts/yes for recognised mains socket types on the café itself; EV connectors, USB sockets or `electricity=yes` do not establish laptop outlets |
+| `has_outlets` | Explicit `power_supply=yes/no`, or positive counts/yes for recognised mains socket types on the café itself (`socket:typea`–`typeo`, `schuko`, and `bs1363`, OSM's key for the Irish/UK type G socket); EV connectors, USB sockets, `electricity=yes` and `service:electricity` do not establish laptop outlets |
 | `laptop_allowed` | Explicit `laptop=yes/no`; `restricted` and conditional restrictions remain unknown |
 
 Generic `internet_access=yes`, wired internet and public computer terminals do not establish Wi-Fi. A zero count for one socket type does not prove that all outlets are absent. Conditional/seasonal tags and conflicting evidence remain unknown and are reported. Availability does not establish that a service is free.

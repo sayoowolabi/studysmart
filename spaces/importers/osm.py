@@ -3,9 +3,10 @@ OUTDOOR_POSITIVE = {
     "yes", "parklet", "pedestrian_zone", "street", "sidewalk", "patio", "terrace",
     "balcony", "veranda", "roof", "garden", "beach", "courtyard", "separate",
 }
+# bs1363 is OSM's key for the Irish/UK domestic socket (IEC type G), the usual Dublin outlet.
 MAINS_SOCKET_TYPES = {
     "typea", "typeb", "typec", "typed", "typee", "typef", "typeg", "typeh",
-    "typei", "typej", "typek", "typel", "typem", "typen", "typeo", "schuko",
+    "typei", "typej", "typek", "typel", "typem", "typen", "typeo", "schuko", "bs1363",
 }
 
 

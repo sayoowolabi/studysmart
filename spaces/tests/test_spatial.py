@@ -65,6 +65,17 @@ class NearbyTests(APITestCase):
         response = self.client.get(search(NEARBY_URL, radius=2000, type="cafe", indoor_seating="true"))
         self.assertEqual([item["name"] for item in response.data], ["Seated Cafe"])
 
+    def test_combined_facility_filters_require_every_facility_confirmed(self):
+        # The map sends several facility filters at once; they must combine with AND.
+        make_space("Seated Wi-Fi Cafe", ORIGIN_LAT + 0.002, indoor_seating=True, has_wifi=True)
+        make_space("Seated Unknown Wi-Fi Cafe", ORIGIN_LAT + 0.003, indoor_seating=True)
+        make_space("Seated No Wi-Fi Cafe", ORIGIN_LAT + 0.004, indoor_seating=True, has_wifi=False)
+        response = self.client.get(search(NEARBY_URL, radius=2000, type="cafe", indoor_seating="true", has_wifi="true"))
+        self.assertEqual([item["name"] for item in response.data], ["Seated Wi-Fi Cafe"])
+
+        nearest = self.client.get(search(NEAREST_URL, indoor_seating="true", has_wifi="true"))
+        self.assertEqual(nearest.data["name"], "Seated Wi-Fi Cafe")
+
     def test_no_matches_returns_empty_list(self):
         response = self.client.get(search(NEARBY_URL, lat=53.0, radius=1000))
         self.assertEqual(response.status_code, 200)
