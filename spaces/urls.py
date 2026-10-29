@@ -9,5 +9,6 @@ router.register("spaces", views.StudySpaceViewSet, basename="studyspace")
 app_name = "spaces"
 urlpatterns = [
     path("", views.home, name="home"),
+    path("api/areas/coverage/", views.AreaCoverageView.as_view(), name="area-coverage"),
     path("api/", include(router.urls)),
 ]

@@ -10,7 +10,9 @@ Issue #2 adds a shared `StudySpace` model for libraries and cafés, five nullabl
 
 Issue #3 adds a study-space CRUD REST API at `/api/spaces/` with public read access, model-permission-controlled writes and type/facility filters.
 
-Spatial search APIs, map controls and Leaflet features remain for later issues. The home page is still an initial development page, not a study-space search interface.
+Issue #4 adds PostGIS-backed nearby and nearest searches and per-area library/café counts.
+
+Map controls and Leaflet features remain for later issues. The home page is still an initial development page, not a study-space search interface.
 
 ## Architecture
 
@@ -123,7 +125,17 @@ docker compose exec web /usr/local/bin/python manage.py test spaces
 (Invoke-WebRequest -UseBasicParsing http://localhost:8000/).StatusCode
 ```
 
-Tests cover the original environment checks plus models, tri-state facility parsing, seated-café selection, admin permissions/corrections, repeat imports and geometry validation/transformation. Database tests create a separate test database and remove it afterwards; they do not delete the application database. Import tests use clearly fictional fixtures and make no network calls.
+Tests cover:
+
+- environment checks
+- models and tri-state facility parsing
+- seated-café selection
+- admin permissions and corrections
+- repeat imports and geometry validation/transformation
+- the CRUD API (permissions, validation, filters, imported-record protection)
+- spatial searches using known geometries
+
+Database tests create a separate test database and remove it afterwards; they do not delete the application database. Import tests use clearly fictional fixtures and make no network calls.
 
 To verify the actual application database through Django:
 
@@ -207,9 +219,9 @@ Initial HTTP probes failed while services were still initialising; subsequent pr
 
 ## Import study-space data (Issue #2)
 
-Read [data sources and import decisions](docs/data-sources.md) for the schema, exact datasets, licences, download instructions, stable identity mappings and known data-quality limitations. The checked-in `data/source-manifest.json` records the downloaded snapshots; raw downloads are kept in ignored `data/raw/`.
+Read [data sources and import decisions](docs/data-sources.md) for the schema, exact datasets, licences, download instructions, stable identity mappings and known data-quality limitations. The exact source snapshots used for the recorded imports are committed in `data/raw/`, with their checksums, licences and retrieval times in `data/source-manifest.json`. A fresh clone can therefore reproduce the same import without downloading anything. Git stores these files byte-for-byte (`.gitattributes`), so their checksums match on every platform.
 
-After downloading the manifest's files:
+To import:
 
 ```powershell
 docker compose exec web /usr/local/bin/python manage.py migrate
@@ -221,7 +233,7 @@ docker compose exec web /usr/local/bin/python manage.py import_cafes
 
 The two invalid source boundaries require the explicit repair flag; repair methods and original validity reasons are recorded. Location imports require the complete area set. Commands accept `--manifest PATH` and `--dry-run`, validate snapshot hashes, report invalid/outside records and never delete missing source records. Reimporting an unchanged snapshot creates no duplicates.
 
-In Django admin, use the category and indoor-seating filters to select cafés with confirmed indoor seats. Unknown-seat cafés remain stored. Editing any facility automatically protects all five facility values from imports and requires evidence notes; source metadata remains read-only. Uncheck the facility lock in a separate save to resume source-owned facility updates.
+In Django admin, use the category and indoor-seating filters to select cafés with confirmed indoor seats. Unknown-seat cafés remain stored. Editing any facility automatically protects all five facility values from imports and requires evidence notes; source metadata remains read-only. For imported records, name, type, location, address and description are also read-only, matching the API, because the next import would overwrite them. Uncheck the facility lock in a separate save to resume source-owned facility updates.
 
 ## Issue #2 verification
 
@@ -319,8 +331,83 @@ For writes, log in at `/admin/`, open `/api/spaces/` and use the browsable API's
 | Confirmed indoor-seat café filter on imported data | 91 records over HTTP, matching the Issue #2 count |
 | Invalid filter value / anonymous POST over HTTP | 400 / 403 |
 
+## Spatial search and area analysis (Issue #4)
+
+All three operations run in PostGIS through GeoDjango. Python never calculates distances or containment. The query functions are in [spaces/spatial.py](spaces/spatial.py). All endpoints are public and read-only.
+
+| Endpoint | Operation | PostGIS function |
+| --- | --- | --- |
+| `GET /api/spaces/nearby/?lat=&lng=&radius=` | Spaces within `radius` metres, nearest first | `ST_DistanceSphere` |
+| `GET /api/spaces/nearest/?lat=&lng=` | Single closest matching space | `ST_DistanceSphere` + `LIMIT 1` |
+| `GET /api/areas/coverage/` | Library and café counts per administrative area | `ST_CoveredBy` |
+
+### Parameters and validation
+
+- `lat` (−90..90) and `lng` (−180..180) are required decimal degrees in EPSG:4326 (WGS 84). NaN and infinity are rejected.
+- `radius` is required for `nearby`. It is in metres, must be greater than 0 and at most 10,000.
+- `nearby` and `nearest` accept the same `type` and facility filters as `/api/spaces/`. For example, `type=cafe&indoor_seating=true` matches only confirmed indoor seating. Filters apply before distance ordering, so `nearest` returns the closest *matching* space.
+- Invalid values return `400 {"field": ["message"]}`.
+
+### Responses
+
+`nearby` returns a JSON list in the same format as `/api/spaces/`, plus `distance_m` (metres, one decimal place), ordered by distance. A search with no matches returns `200 []`.
+
+`nearest` returns one study-space object with `distance_m`. If nothing matches, it returns `404 {"detail": "No study space matches these filters."}`.
+
+`coverage` returns one row per area, ordered by name:
+
+```json
+[{"id": 1, "source_id": "central", "name": "CENTRAL", "library_count": 7, "cafe_count": 193, "total_count": 200}]
+```
+
+If no areas have been imported, `coverage` returns `200 []`.
+
+### Coordinate systems, units and accuracy
+
+- **Shared coordinate system:** stored points, stored boundaries and search points all use EPSG:4326, so no coordinate transformation happens at query time. Boundaries were converted from ITM (EPSG:2157) during the Issue #2 import.
+- **Distance units:** for longitude/latitude geometry, GeoDjango's `Distance` uses `ST_DistanceSphere`, which returns metres. The spherical model differs from the more exact spheroid by less than about 0.5%, which is acceptable for walking-distance search.
+- **Consistent distances:** one distance annotation is used to filter, sort and report results, so a returned `distance_m` never exceeds the requested radius.
+- **Boundary edges:** `ST_CoveredBy` includes points exactly on an edge, so a space on a shared border counts in both areas. Spaces outside every area are not counted.
+
+### Indexes and performance
+
+| Operation | Index use | Measured cost |
+| --- | --- | --- |
+| Coverage | `ST_CoveredBy` uses the GiST index on `location` (a bitmap index scan in `EXPLAIN`). Each boundary is passed as a subquery, so polygons never leave the database. | 1 + number-of-areas queries (6 for DCC) |
+| Nearby / nearest | `ST_DistanceSphere` is not index-assisted, so `EXPLAIN` shows a sequential scan. The distance for every row is computed inside PostgreSQL. | 1 query each |
+
+For 657 rows the sequential scan takes milliseconds, and at this table size the planner would choose it anyway. Index-assisted radius searches would need a geography column or a projected (ITM) expression index. Neither is justified at this data size.
+
+### Manual check
+
+Windows PowerShell 5.1 passes a JSON array down the pipeline as one object, so wrap list requests in parentheses before `Select-Object`. It also decodes UTF-8 names as ISO-8859-1 ("CaffÃ¨" instead of "Caffè"). Browsers, JavaScript and PowerShell 7 decode them correctly.
+
+```powershell
+(Invoke-RestMethod "http://localhost:8000/api/spaces/nearby/?lat=53.3498&lng=-6.2603&radius=300&type=cafe&indoor_seating=true") | Select-Object name, distance_m
+Invoke-RestMethod "http://localhost:8000/api/spaces/nearest/?lat=53.3498&lng=-6.2603&type=library" | Select-Object name, distance_m
+Invoke-RestMethod "http://localhost:8000/api/areas/coverage/" | Format-Table
+Invoke-WebRequest -UseBasicParsing "http://localhost:8000/api/spaces/nearby/?lat=53.3498&lng=-6.2603&radius=0"   # 400
+```
+
+To see the SQL and query plan:
+
+```powershell
+docker compose exec web /usr/local/bin/python manage.py shell -c "from spaces.models import StudySpace as S; from spaces.spatial import *; qs = spaces_within(S.objects.all(), search_point(53.3498, -6.2603), 500); print(qs.query); print(qs.explain())"
+```
+
+## Issue #4 verification
+
+| Check | Result |
+| --- | --- |
+| Automated tests | All 84 passed: 70 existing plus 14 spatial tests |
+| Known geometry | 0.005° and 0.01° of latitude returned about 556 m and 1,112 m (±1 m); radius 1,100 m excluded and 1,120 m included the 1,112 m point |
+| Query counts (`assertNumQueries`) | Nearby 1, nearest 1, coverage 1 + areas |
+| Generated SQL | `ST_DistanceSphere` for distance; `EXPLAIN` showed the sequential scan described above |
+| Coverage on imported data | Central 200, North Central 52, North West 12, South Central 86, South East 307; total 657, equal to all imported records |
+| HTTP smoke checks | Filtered nearby search 200 (12 confirmed-seat cafés within 300 m of the test point); nearest library 200; radius 0 → 400 |
+
 ## Development and attribution
 
-Follow [AGENTS.md](AGENTS.md). Issue #3 is limited to the study-space CRUD API; spatial search endpoints and maps belong to later issues. Imported data is source-reported and has not been independently surveyed.
+Follow [AGENTS.md](AGENTS.md). Issue #4 is limited to spatial search and area-analysis endpoints; maps and the search UI belong to later issues. Imported data is source-reported and has not been independently surveyed.
 
-AI assistance was used for the initial documentation and Issues #1–3 implementation. The student must review, verify and understand the work, and document assistance according to the module policy.
+AI assistance was used for the initial documentation and Issues #1–4 implementation. The student must review, verify and understand the work, and document assistance according to the module policy.

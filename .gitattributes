@@ -1,0 +1,3 @@
+# Source snapshots are verified by SHA-256 in data/source-manifest.json,
+# so Git must store and check them out byte-for-byte (no line-ending conversion).
+data/raw/** -text

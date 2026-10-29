@@ -1,15 +1,13 @@
 """JSON representation and validation of study spaces for the REST API."""
 import copy
+import math
 
 from django.contrib.gis.geos import Point
 from django.core.exceptions import ValidationError as DjangoValidationError
 from django.utils import timezone
 from rest_framework import serializers
 
-from .models import FACILITY_FIELDS, StudySpace
-
-# Imports overwrite these fields, so API edits to imported records would be lost.
-SOURCE_OWNED_FIELDS = ("name", "space_type", "location", "address", "description")
+from .models import FACILITY_FIELDS, SOURCE_OWNED_FIELDS, StudySpace
 
 
 class StudySpaceSerializer(serializers.ModelSerializer):
@@ -77,3 +75,40 @@ class StudySpaceSerializer(serializers.ModelSerializer):
         if changed:
             attrs["facility_import_locked"] = True
             attrs["facility_verified_at"] = timezone.now()
+
+
+class StudySpaceDistanceSerializer(StudySpaceSerializer):
+    """A study space plus its distance from the search point, from the distance annotation."""
+
+    distance_m = serializers.SerializerMethodField()
+
+    class Meta(StudySpaceSerializer.Meta):
+        fields = [*StudySpaceSerializer.Meta.fields, "distance_m"]
+
+    def get_distance_m(self, space):
+        return round(space.distance.m, 1)
+
+
+MAX_SEARCH_RADIUS_M = 10_000
+
+
+def require_finite(value):
+    # NaN passes min/max comparisons, so it must be rejected explicitly.
+    if not math.isfinite(value):
+        raise serializers.ValidationError("Must be a finite number.")
+
+
+class PointQuerySerializer(serializers.Serializer):
+    """Validates the ?lat=&lng= query parameters of a spatial search."""
+
+    lat = serializers.FloatField(min_value=-90, max_value=90, validators=[require_finite])
+    lng = serializers.FloatField(min_value=-180, max_value=180, validators=[require_finite])
+
+
+class NearbyQuerySerializer(PointQuerySerializer):
+    radius = serializers.FloatField(max_value=MAX_SEARCH_RADIUS_M, validators=[require_finite])
+
+    def validate_radius(self, value):
+        if value <= 0:
+            raise serializers.ValidationError("Must be greater than 0 metres.")
+        return value

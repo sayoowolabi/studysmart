@@ -68,9 +68,9 @@ No venue facilities have been independently surveyed by this implementation. A t
 
 `data/source-manifest.json` records file paths, source URLs, exact downloaded-file SHA-256 hashes, retrieval timestamps with timezone, licences and source EPSG codes. Café metadata also records the query and OSM database timestamp.
 
-Raw downloads live in ignored `data/raw/`, excluded from Git and the application image. The manifest and identity maps are tracked. Synthetic test fixtures are separate and deliberately named fictional places; they are never loaded into the application database.
+The snapshots in `data/raw/` are committed alongside the manifest and identity maps, so a fresh clone reproduces the recorded import exactly. A newly downloaded Overpass response would not match the recorded checksum. Committing the files also keeps an exact copy of the data behind the reported import counts. `.gitattributes` marks `data/raw/**` as `-text`, so Git never converts line endings and the SHA-256 checksums match on Windows and Linux. The snapshots stay excluded from the Docker image; Compose's source bind mount makes them available to the import commands. Redistribution is permitted under the sources' licences with the attribution given below and in the manifest. Synthetic test fixtures are separate and deliberately named fictional places; they are never loaded into the application database.
 
-For a new checkout, download the files named in the manifest. In PowerShell:
+To refresh a snapshot from its source, download the files named in the manifest. In PowerShell:
 
 ```powershell
 New-Item -ItemType Directory -Force data/raw | Out-Null
@@ -177,7 +177,7 @@ Repeat the last three commands to verify unchanged counts. All commands accept `
 
 Malformed files/metadata fail before writes. Invalid individual records are reported and skipped. Conflicting duplicate identities abort the transaction; `--dry-run` rolls back all writes. Ordinary upserts validate records before saving. Repeat imports of the same file do not update `imported_at`; changed source-owned fields and provenance do.
 
-The Django admin requires login and model permissions. It provides category and Yes/No/Unknown facility filters. Provenance and raw source attributes are read-only.
+The Django admin requires login and model permissions. It provides category and Yes/No/Unknown facility filters. Provenance and raw source attributes are read-only. For imported records, the import-owned name, type, location, address and description are also read-only, because the next import would overwrite manual edits.
 
 Editing a facility in admin automatically protects **all five facility values**, records a verification time and requires evidence notes. Imports continue to refresh raw source attributes/provenance but preserve protected facility values. To resume source-controlled facility updates, save with the lock unchecked and no simultaneous facility changes, then rerun the import. Explicitly changing a protected value to unknown is supported.
 
