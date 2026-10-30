@@ -2,73 +2,187 @@
 
 [![Tests](https://github.com/sayoowolabi/studysmart/actions/workflows/tests.yml/badge.svg)](https://github.com/sayoowolabi/studysmart/actions/workflows/tests.yml)
 
-StudySmart is an individual Advanced Web Mapping / Location-Based Services university project to help students find study spaces in Dublin.
+StudySmart helps students find somewhere to study in Dublin. It shows public libraries and cafés on an interactive map, finds the nearest ones to a university campus, the user's location or a point on the map, and filters them by facilities that the source data actually confirms.
 
-## Current scope
+It is an individual project for the Advanced Web Mapping / Location-Based Services module. Its objectives are to demonstrate a spatial database (PostgreSQL/PostGIS), a Django/GeoDjango REST API with spatial queries, an interactive Leaflet frontend, a reproducible Docker deployment, and sound software engineering practice: automated tests, continuous integration and documentation.
 
-Issue #1 provides a Django project (`studysmart`), an app (`spaces`), a simple page at `/`, and a Docker development environment with PostGIS and pgAdmin4.
+## Contents
 
-Issue #2 adds a shared `StudySpace` model for libraries and cafés, five nullable facility fields, administrative-area multipolygons, repeatable snapshot imports and Django-admin editing. Source metadata, retrieval times, licences and original attributes are preserved. Unknown facilities remain SQL NULL.
+- [Features](#features)
+- [Screenshots](#screenshots)
+- [Technology stack](#technology-stack)
+- [Architecture](#architecture)
+- [Repository structure](#repository-structure)
+- [Quick start](#quick-start)
+- [Environment variables](#environment-variables)
+- [Tests and continuous integration](#tests-and-continuous-integration)
+- [API](#api)
+- [Data sources and licences](#data-sources-and-licences)
+- [Known limitations and future improvements](#known-limitations-and-future-improvements)
+- [Troubleshooting](#troubleshooting)
+- [Deployment beyond local development](#deployment-beyond-local-development)
+- [Development process](#development-process)
+- [Attribution](#attribution)
 
-Issue #3 adds a study-space CRUD REST API at `/api/spaces/` with public read access, model-permission-controlled writes and type/facility filters.
+## Features
 
-Issue #4 adds PostGIS-backed nearby and nearest searches and per-area library/café counts.
+**Map and search**
 
-Issue #5 replaces the development home page with an interactive Leaflet map of all libraries and cafés, loaded from the REST API, and adds a read-only `/api/areas/` GeoJSON endpoint for an optional boundary overlay.
+- Interactive Leaflet map of **24 libraries** (Dublin City Council open data) and **633 cafés** (OpenStreetMap) in the Dublin City Council area. Libraries and cafés have different marker shapes and colours.
+- Three ways to choose a starting point: a **university campus** (eight campuses, coordinates taken from OpenStreetMap), **"Use my location"** (browser geolocation) or **"Pick on map"** (tap a point or a study-space marker).
+- Automatic search: the **10 nearest matches** appear as numbered result cards linked to numbered map markers. Clicking a card or a marker highlights both. The summary states the total, for example "Showing 10 of 250 nearby study spaces (within 1.0 km)".
+- Filters: distance (500 m – 5 km), type (libraries, cafés) and **confirmed facilities** (indoor seating, Wi-Fi, power outlets). A facility that no record confirms is shown disabled.
+- Fallbacks when nothing is within the radius: *Search a wider area* and *Show nearest match*.
+- Popups with address, distance and all five facilities as Yes / No / **Unknown**, plus source and licence.
+- Optional administrative-area boundary overlay and a table of **library and café counts per area**.
+- Responsive layout (desktop, tablet, phone), keyboard-accessible controls, loading, empty and error states, and clear geolocation error messages.
 
-Issue #6 adds radius and nearest searches, type and confirmed-facility filters, and per-area counts to the map, using the existing Issue #3–5 endpoints without backend changes. Issue #15 later reorganised these controls into the current three-step panel.
+**Spatial operations (PostGIS, via GeoDjango)**
 
-Issue #15 redesigns the interface around a three-step flow: choose a starting point (a university campus, your current location, or a point on the map), adjust filters, and browse the 10 nearest matches as numbered cards linked to numbered map markers. It reuses the same API endpoints; there are no model, migration or API changes.
+- Radius search (`ST_DistanceSphere`), nearest neighbour (distance order with `LIMIT 1`) and area containment with counts (`ST_CoveredBy`). The browser never calculates distances or containment.
 
-StudySmart covers two categories only: libraries and cafés. University study spaces, mentioned in an early Issue #5 task, are out of scope; the model and migrations are unchanged.
+**Data management**
+
+- REST API with public read access and permission-controlled create, update and delete.
+- Django admin with map widgets. Administrators can correct facilities with evidence notes; corrections are protected from later imports.
+- Repeatable, idempotent imports from source snapshots committed to the repository.
+
+**Data honesty**
+
+- Facilities are `true`, `false` or **unknown**; unknown is never shown or filtered as confirmed. All 24 library records have unknown facilities because the source does not record them. No facility has been surveyed in person, and no demonstration data is included.
+
+## Screenshots
+
+| Desktop | Phone |
+| --- | --- |
+| ![StudySmart on a desktop browser: search panel on the left, numbered results on the map](docs/screenshots/desktop.png) | ![StudySmart on a phone: controls, map and result cards stacked](docs/screenshots/phone.png) |
+
+## Technology stack
+
+| Layer | Technology |
+| --- | --- |
+| Database | PostgreSQL 17 with PostGIS 3.6 (`postgis/postgis:17-3.6` image) |
+| Backend | Python 3.12, Django 5.2 LTS with GeoDjango, Django REST Framework 3.18, Psycopg 3 |
+| Spatial libraries | GDAL, GEOS and PROJ (inside the Django container) |
+| Frontend | Django template, Leaflet 1.9.4, OpenStreetMap tiles, Bootstrap 5.3 (CSS), native JavaScript ES modules (no build step), self-hosted Nunito font |
+| Deployment | Docker Compose: Django, PostGIS and pgAdmin 4 services on a private network with named volumes |
+| Quality | Django test runner against PostGIS, browser tests (Node 22 and headless Chrome/Edge, no npm packages), GitHub Actions |
+
+Exact dependency versions are pinned in [requirements.txt](requirements.txt), [docker-compose.yml](docker-compose.yml), [Dockerfile](Dockerfile) and the template's CDN links (with Subresource Integrity hashes).
 
 ## Architecture
 
 ```mermaid
 flowchart LR
-    Browser[Browser: localhost:8000] --> Web[Django / GeoDjango]
-    Web --> DB[(PostgreSQL 17 / PostGIS 3.6)]
-    Admin[pgAdmin: localhost:5050] --> DB
-    DB --> Volume[Named PostgreSQL volume]
+    subgraph Browser
+        UI["Map page<br/>Leaflet + ES modules"]
+    end
+    subgraph Docker["Docker Compose (private network)"]
+        Web["web: Django / GeoDjango<br/>template · REST API · admin"]
+        DB[("db: PostgreSQL + PostGIS<br/>named volume")]
+        PGA["pgadmin"]
+    end
+    UI -->|"HTTP / JSON"| Web
+    Web -->|"SQL with PostGIS functions"| DB
+    PGA --> DB
+    UI -.->|"map tiles"| OSM["OpenStreetMap tile server"]
+    Snap["Source snapshots in data/raw"] -.->|"import commands"| Web
 ```
 
-All three services share a dedicated bridge network with an explicit private subnet. Docker DNS resolves the database as `db`; container addresses are not hard-coded. Only the Django and pgAdmin ports are published, both on the host loopback interface. PostgreSQL has no host port.
+The browser asks the REST API for study spaces; Django turns each search into one PostGIS query; results return as JSON and are drawn on the map. Details, a request sequence diagram and the main design decisions are in **[docs/architecture.md](docs/architecture.md)**. The database schema, geometry and import process are in **[docs/database.md](docs/database.md)**.
 
-Dependencies are Django 5.2 LTS (which includes GeoDjango), Django REST Framework and Psycopg 3. Python 3.12 and GEOS/GDAL/PROJ run inside the Django container. Compose passes environment variables to Django, so no dotenv package is required. Django's development server is used; this is not a production deployment.
+## Repository structure
 
-## Prerequisites
-
-- Docker Desktop running **Linux containers**, with its WSL 2 backend recommended on Windows.
-- Docker Compose supporting health-based dependencies.
-- Internet access for the initial image and package downloads.
-- Available host ports 8000 and 5050.
-- A private subnet that does not overlap your local, VPN or other Docker networks.
-
-A host Python installation is not required for the commands below. Run them from the repository root in PowerShell or the PyCharm terminal.
-
-## Environment configuration
-
-For a new checkout only:
-
-```powershell
-Copy-Item .env.example .env
+```text
+studysmart/              Django project: settings and root URLs
+spaces/                  Django app
+  models.py              StudySpace and AdministrativeArea (PostGIS geometry)
+  serializers.py         API representation and validation
+  views.py               Map page, REST API views and filters
+  spatial.py             All spatial queries (radius, nearest, containment, GeoJSON)
+  universities.py        Campus starting points (OpenStreetMap-sourced)
+  validators.py          Geometry validation shared by API, admin and imports
+  admin.py               Django admin with map widgets
+  importers/, management/commands/   Snapshot import commands
+  templates/, static/    Map page, JavaScript modules, CSS and font
+  tests/                 Django tests and synthetic import fixtures
+data/                    Source snapshots, checksums manifest and stable identity maps
+frontend-tests/          Browser tests for the map page
+docs/                    Architecture, database, API, testing, deployment and data-source documentation
+.github/workflows/       Continuous integration
+Dockerfile, docker-compose.yml, .env.example, requirements.txt
 ```
 
-Do not overwrite an existing `.env`. Replace the `change-me` values with unique local secrets before starting. Settings reject missing secrets and the provided placeholders.
+## Quick start
+
+Verified from a fresh clone on 2026-10-30 (see [docs/deployment.md](docs/deployment.md#clean-installation-verification)).
+
+**Prerequisites:** Git; Docker Desktop (Linux containers; WSL 2 backend on Windows) or Docker Engine with Compose v2; free host ports 8000 and 5050; internet access for the first build. No local Python installation is needed. Commands are shown for PowerShell; they also work in Bash except `Copy-Item` (use `cp`).
+
+1. **Clone and configure**
+
+   ```powershell
+   git clone https://github.com/sayoowolabi/studysmart.git
+   cd studysmart
+   Copy-Item .env.example .env
+   ```
+
+   Edit `.env` and replace the three `change-me` values with your own long random secrets (see [Environment variables](#environment-variables)). Django refuses to start with missing or placeholder secrets.
+
+2. **Build, start the database and create the tables**
+
+   ```powershell
+   docker compose build web
+   docker compose up -d db pgadmin
+   docker compose run --rm web /usr/local/bin/python manage.py migrate
+   docker compose up -d web
+   ```
+
+   The database health check makes the other services wait until PostgreSQL is ready. The first build takes a few minutes.
+
+3. **Import the data** (areas first; locations are checked against them)
+
+   ```powershell
+   docker compose exec web /usr/local/bin/python manage.py import_administrative_areas --repair-invalid
+   docker compose exec web /usr/local/bin/python manage.py import_libraries
+   docker compose exec web /usr/local/bin/python manage.py import_cafes
+   ```
+
+   Expected: 5 areas, 24 libraries and 633 cafés created. Running the commands again reports everything `unchanged`. Add `--dry-run` to preview an import without saving.
+
+4. **Open the application**
+
+   | Service | Address |
+   | --- | --- |
+   | StudySmart map | [http://localhost:8000/](http://localhost:8000/) |
+   | REST API (browsable) | [http://localhost:8000/api/](http://localhost:8000/api/) |
+   | Django admin | [http://localhost:8000/admin/](http://localhost:8000/admin/) |
+   | pgAdmin | [http://localhost:5050/](http://localhost:5050/) |
+
+5. **Optional: create an administrator** (needed for admin and API writes)
+
+   ```powershell
+   docker compose exec web /usr/local/bin/python manage.py createsuperuser
+   ```
+
+   To browse the database in pgAdmin, log in with your `PGADMIN_DEFAULT_*` values and register a server with host `db`, port `5432` and your `POSTGRES_*` database, user and password.
+
+**Stopping and restarting:** `docker compose stop` / `docker compose start`, or `docker compose down` / `docker compose up -d` to recreate the containers. Data lives in the named volume `studysmart_postgres_data` and survives both. **Never add `-v`** to `docker compose down` unless you intend to delete the database.
+
+## Environment variables
+
+Compose passes these from `.env` to the services; Django reads them from its environment. `.env` is ignored by Git and excluded from the Docker image. `.env.example` contains placeholders only.
 
 | Variable | Purpose |
 | --- | --- |
-| `DJANGO_SECRET_KEY` | Long random Django signing secret |
-| `DJANGO_DEBUG` | Exactly `True` or `False`; defaults to false if absent |
-| `DJANGO_ALLOWED_HOSTS` | Comma-separated hostnames; local defaults exclude wildcards |
-| `POSTGRES_DB` | Database created on first initialisation |
-| `POSTGRES_USER` | Local development database account |
-| `POSTGRES_PASSWORD` | Unique database password |
-| `PGADMIN_DEFAULT_EMAIL` | pgAdmin login email |
-| `PGADMIN_DEFAULT_PASSWORD` | Separate pgAdmin password |
-| `DOCKER_SUBNET` | Dedicated subnet; defaults to `172.30.50.0/24` |
+| `DJANGO_SECRET_KEY` | Long random Django signing secret (required) |
+| `DJANGO_DEBUG` | `True` or `False`; defaults to `False`. Use `True` locally: the development server serves the app's own JavaScript and CSS only in debug mode |
+| `DJANGO_ALLOWED_HOSTS` | Comma-separated host names; defaults to `localhost,127.0.0.1,[::1]` |
+| `POSTGRES_DB`, `POSTGRES_USER`, `POSTGRES_PASSWORD` | Database name and account, created when the volume is first initialised |
+| `PGADMIN_DEFAULT_EMAIL`, `PGADMIN_DEFAULT_PASSWORD` | pgAdmin login |
+| `DOCKER_SUBNET` | Private subnet for the Compose network; defaults to `172.30.50.0/24` |
 
-A PowerShell 5.1-compatible way to generate one random secret is:
+Generate each secret with a cryptographically secure generator, for example in Bash `openssl rand -hex 48`, or in Windows PowerShell 5.1:
 
 ```powershell
 $generator = [System.Security.Cryptography.RandomNumberGenerator]::Create()
@@ -78,696 +192,104 @@ $generator.GetBytes($secretBytes)
 $generator.Dispose()
 ```
 
-Repeat for each secret and enter the values locally. Do not share the output. Single-quoted values in `.env` preserve literal `$` and `#` characters.
+Single-quote values in `.env` that contain `$` or `#`. Do not share the generated values.
 
-`.env` is ignored by Git and excluded from Docker's build context. `.env.example` contains placeholders only. Compose explicitly passes only the environment variables each service needs. Django does not load `.env` directly.
+## Tests and continuous integration
 
-## Start the environment
+| Suite | Size | Command |
+| --- | --- | --- |
+| Django tests (models, API, permissions, spatial queries, imports, settings, page) against a separate PostGIS test database | 129 tests | `docker compose exec web /usr/local/bin/python manage.py test spaces` |
+| Browser tests of the map page (needs Node 22+ and Chrome, Chromium or Edge; the app running with data imported) | 39 checks | `node frontend-tests/map-ui.test.mjs` |
+| System and migration checks | | `docker compose exec web /usr/local/bin/python manage.py check` and `… makemigrations --check --dry-run` |
 
-```powershell
-docker compose config --quiet
-docker compose build web
-docker compose up -d db pgadmin
-docker compose run --rm web /usr/local/bin/python manage.py migrate
-docker compose up -d web
-docker compose ps
-```
+[GitHub Actions](.github/workflows/tests.yml) runs all of these on every push and pull request, using this repository's own `Dockerfile` and `docker-compose.yml` with throwaway test credentials. What each test covers, the verified results and how intermittent failures were diagnosed are in **[docs/testing.md](docs/testing.md)**.
 
-The database health check waits for PostgreSQL to accept TCP connections. Both dependent services wait for that health check. Migrations remain an explicit command, rather than running on every web-server restart.
+## API
 
-Open:
-
-- Django: [http://localhost:8000/](http://localhost:8000/)
-- Django admin: [http://localhost:8000/admin/](http://localhost:8000/admin/)
-- pgAdmin: [http://localhost:5050/](http://localhost:5050/)
-
-The first image build and pgAdmin initialisation can take several minutes. A running container may not yet be serving HTTP; inspect its logs and retry the page once initialisation completes.
-
-Optionally create a Django administrator interactively:
-
-```powershell
-docker compose exec web /usr/local/bin/python manage.py createsuperuser
-```
-
-Django administrator credentials are separate from pgAdmin and database credentials.
-
-In pgAdmin, log in using your local `PGADMIN_DEFAULT_*` values, then register a server:
-
-| Field | Value |
-| --- | --- |
-| Name | StudySmart |
-| Host name/address | `db` |
-| Port | `5432` |
-| Maintenance database | Your `POSTGRES_DB` value |
-| Username/password | Your `POSTGRES_USER` and `POSTGRES_PASSWORD` values |
-
-Inside pgAdmin's container, `localhost` means pgAdmin itself, not PostgreSQL.
-
-## Checks and tests
-
-```powershell
-docker compose exec web /usr/local/bin/python manage.py check --database default
-docker compose exec web /usr/local/bin/python -m pip check
-docker compose exec web /usr/local/bin/python manage.py showmigrations
-docker compose exec web /usr/local/bin/python manage.py test spaces
-(Invoke-WebRequest -UseBasicParsing http://localhost:8000/).StatusCode
-```
-
-Tests cover:
-
-- environment checks
-- models and tri-state facility parsing
-- seated-café selection
-- admin permissions and corrections
-- repeat imports and geometry validation/transformation
-- the CRUD API (permissions, validation, filters, imported-record protection)
-- spatial searches using known geometries
-- the boundary GeoJSON endpoint and the map page (API URLs, static assets, pinned CDN hashes, attribution)
-- the search interface (filter controls match API parameters, labelled controls, no HTML insertion, combined facility filters)
-- the Issue #7 additions: updates, read-only provenance fields, per-operation permissions, anonymous write attempts on every endpoint, HTTP errors, exact polygon containment, host and security-header configuration (see the Issue #7 section)
-
-Database tests create a separate test database and remove it afterwards; they do not delete the application database. Import tests use clearly fictional fixtures and make no network calls.
-
-To verify the actual application database through Django:
-
-```powershell
-@'
-from django.db import connection
-with connection.cursor() as cursor:
-    cursor.execute("SELECT current_database(), PostGIS_Version()")
-    print(cursor.fetchone())
-'@ | docker compose exec -T web /usr/local/bin/python manage.py shell
-```
-
-The PowerShell here-string avoids nested command-line quoting. You can also enter these statements in an interactive `manage.py shell`.
-
-## Stop, restart and verify persistence
-
-Temporarily stop/start the existing containers:
-
-```powershell
-docker compose stop
-docker compose start
-```
-
-Stop and remove this project's containers and network, retaining the named volumes:
-
-```powershell
-docker compose down
-docker compose up -d
-```
-
-Never add `-v` when retaining database data. PostgreSQL uses `studysmart_postgres_data`; pgAdmin configuration uses `studysmart_pgadmin_data`. Database files are mounted at `/var/lib/postgresql/data` for the selected PostgreSQL 17 image.
-
-To manually verify persistence:
-
-1. Create a Django administrator and confirm login works.
-2. Run `docker compose restart`; confirm login still works.
-3. Run `docker compose down`, then `docker compose up -d`.
-4. Confirm the same login still works and `showmigrations` still lists applied migrations.
-
-Named volumes survive container recreation, but are not backups.
-
-## PyCharm and Docker Desktop
-
-Open the repository in PyCharm and use its terminal for the Compose commands. In editions supporting Docker Compose interpreters, select service `web` and interpreter `/usr/local/bin/python`. Otherwise, keep running management commands in the terminal; installing Windows GDAL libraries is unnecessary.
-
-In Docker Desktop, expand the `studysmart` project to see `web`, `db` and `pgadmin`. Check service logs, database health, published ports and the two named volumes. Use `docker network inspect studysmart_studysmart_network` to verify the configured subnet and membership.
-
-## Troubleshooting and limitations
-
-- **OneDrive:** this checkout is inside OneDrive. Source bind mounts can be slower and reload notifications may be unreliable. If edits are not detected, run `docker compose restart web`. Keep database files in Docker named volumes, not a OneDrive bind mount.
-- **Subnet collision:** choose another unused private CIDR in `DOCKER_SUBNET`. If this project's network already exists, recreate its containers/network with `docker compose down` and `docker compose up -d`, retaining volumes.
-- **Port collision:** stop the conflicting local service or edit the host-side port mapping. Do not stop unrelated containers without checking.
-- **Database credentials:** initialisation variables apply only to an empty database volume. Editing a password in `.env` does not change an existing database role's password.
-- **Development permissions:** Django uses the image's bootstrap PostgreSQL account, which is a superuser. Use a separate restricted application role before deploying beyond local development.
-- **Secrets:** ignored environment files are local plaintext, not encrypted storage. Docker administrators can inspect container environments. Do not share resolved Compose configuration or commit credentials.
-- **Deployment:** local HTTP, optional debug output and `runserver` are for development. Production needs a deployment server, HTTPS, restricted database roles and a security review.
-- **Network isolation:** the dedicated bridge separates this stack from unrelated Compose networks; it is not an air gap and permits outbound traffic.
-- **Image versions:** database and Python tags are versioned but not digest-locked. Do not change PostgreSQL major versions against an existing data volume without a migration/backup plan.
-- **Logs:** use `docker compose logs --tail 50 web db pgadmin` locally, and redact sensitive information before sharing.
-
-## Issue #1 verification
-
-Verified locally with Docker Desktop's Linux engine and Docker Compose:
-
-| Check | Result |
-| --- | --- |
-| Compose configuration and Django image build | Passed |
-| Built-in Django migrations | All 18 applied |
-| Django system check with the default database | No issues |
-| Python dependency check | No broken requirements |
-| Django tests | All 9 passed, including a live PostGIS query |
-| Django connection to application database | Connected to `studysmart`; PostGIS 3.6 available |
-| HTTP smoke checks | Django home page and pgAdmin login returned 200 |
-| Network and volume inspection | Explicit `172.30.50.0/24` bridge; named PostgreSQL volume mounted |
-| pgAdmin network connectivity | Resolved `db` and reached TCP port 5432 |
-| Persistence after restart and container recreation | All 18 migration records, including timestamps, retained the same checksum; migrations were not rerun |
-| Secret handling | `.env` ignored and untracked; absent from the built image |
-| Image runtime user | Unprivileged `django` user |
-
-Initial HTTP probes failed while services were still initialising; subsequent probes passed. Interactive pgAdmin server registration and the PyCharm GUI have not been verified automatically. PyCharm's SDK helper could not resolve the project module during verification; all application checks used the explicitly selected interpreter inside Docker.
-
-## Import study-space data (Issue #2)
-
-Read [data sources and import decisions](docs/data-sources.md) for the schema, exact datasets, licences, download instructions, stable identity mappings and known data-quality limitations. The exact source snapshots used for the recorded imports are committed in `data/raw/`, with their checksums, licences and retrieval times in `data/source-manifest.json`. A fresh clone can therefore reproduce the same import without downloading anything. Git stores these files byte-for-byte (`.gitattributes`), so their checksums match on every platform.
-
-To import:
-
-```powershell
-docker compose exec web /usr/local/bin/python manage.py migrate
-docker compose exec web /usr/local/bin/python manage.py import_administrative_areas --repair-invalid --dry-run
-docker compose exec web /usr/local/bin/python manage.py import_administrative_areas --repair-invalid
-docker compose exec web /usr/local/bin/python manage.py import_libraries
-docker compose exec web /usr/local/bin/python manage.py import_cafes
-```
-
-The two invalid source boundaries require the explicit repair flag; repair methods and original validity reasons are recorded. Location imports require the complete area set. Commands accept `--manifest PATH` and `--dry-run`, validate snapshot hashes, report invalid/outside records and never delete missing source records. Reimporting an unchanged snapshot creates no duplicates.
-
-In Django admin, use the category and indoor-seating filters to select cafés with confirmed indoor seats. Unknown-seat cafés remain stored. Editing any facility automatically protects all five facility values from imports and requires evidence notes; source metadata remains read-only. For imported records, name, type, location, address and description are also read-only, matching the API, because the next import would overwrite them. Uncheck the facility lock in a separate save to resume source-owned facility updates.
-
-## Issue #2 verification
-
-Verified locally against PostGIS after applying `spaces.0001_initial`:
-
-| Check | Result |
-| --- | --- |
-| Django checks and migration consistency | No issues; no unrecorded model changes |
-| Automated tests | All 54 passed, including the original 9 environment tests |
-| DCC libraries | 24 library/service source records; all five facility attributes unknown |
-| OSM cafés | 633 named records inside DCC; 408 outside the study area and 49 unnamed records reported/excluded from the 1,090-element snapshot |
-| Café indoor seating | 91 true, 3 false, 539 unknown; the indoor-seat filter selects only the 91 true records |
-| Café outdoor seating | 123 true, 90 false, 420 unknown |
-| Café Wi-Fi | 29 true, 10 false, 594 unknown |
-| Café outlets and laptop permission | Both unknown for all 633 imported cafés |
-| Administrative areas | Five valid 2D EPSG:4326 multipolygons; two explicit source repairs recorded |
-| Spatial indexes | GiST indexes confirmed for points and boundaries |
-| Repeated real imports | Zero creations/updates; all study-space primary keys, source IDs and import timestamps preserved |
-
-These counts describe the recorded snapshots, not live coverage or independently verified venue facilities. The first real boundary import exposed Z ordinates and source self-intersections; handling and tests were updated before the final successful run. A preliminary admin-form test failed because it requested an unlock while expecting protected-field validation; the corrected test and final suite passed.
-
-## Study-space REST API (Issue #3)
-
-| Method | Endpoint | Access | Success |
+| Method | URL | Purpose | Access |
 | --- | --- | --- | --- |
-| GET | `/api/spaces/` | Public | 200, JSON list |
-| GET | `/api/spaces/{id}/` | Public | 200 |
-| POST | `/api/spaces/` | `spaces.add_studyspace` permission | 201 |
-| PATCH | `/api/spaces/{id}/` | `spaces.change_studyspace` permission | 200 |
-| DELETE | `/api/spaces/{id}/` | `spaces.delete_studyspace` permission | 204 |
+| GET | `/api/spaces/` | List study spaces, with `type` and facility filters | Public |
+| GET | `/api/spaces/{id}/` | One study space | Public |
+| POST | `/api/spaces/` | Create a study space | `add_studyspace` permission |
+| PATCH | `/api/spaces/{id}/` | Update a study space | `change_studyspace` permission |
+| DELETE | `/api/spaces/{id}/` | Delete a manually created study space | `delete_studyspace` permission |
+| GET | `/api/spaces/nearby/?lat=&lng=&radius=` | Spaces within a radius, nearest first, with `distance_m` | Public |
+| GET | `/api/spaces/nearest/?lat=&lng=` | The single nearest matching space | Public |
+| GET | `/api/areas/` | Administrative-area boundaries as GeoJSON | Public |
+| GET | `/api/areas/coverage/` | Library and café counts per area | Public |
 
-PUT is not offered (405); use PATCH. Superusers hold all three permissions. Authentication uses the Django session from logging in at `/admin/`, so writes also need a CSRF token; the browsable API at `/api/spaces/` handles this automatically. HTTP Basic authentication is disabled because this development server uses plain HTTP.
+Parameters, example requests and responses, validation rules and every error status are documented in **[docs/api.md](docs/api.md)**.
 
-### Fields
+## Data sources and licences
 
-Requests and responses use `latitude`/`longitude` in EPSG:4326 degrees; the server stores them as a PostGIS `Point(longitude, latitude)`.
-
-| Field | Write rules |
-| --- | --- |
-| `name`, `space_type` (`library`/`cafe`), `latitude` (−90..90), `longitude` (−180..180) | Required on create |
-| `address`, `description` | Optional text |
-| `indoor_seating`, `outdoor_seating`, `has_wifi`, `has_outlets`, `laptop_allowed` | `true`, `false` or `null` (unknown, the default) |
-| `facility_verification_notes` | Required whenever a facility value is set or changed |
-| `id`, `location_method`, `facility_import_locked`, `facility_verified_at`, `source_*`, `imported_at` | Read-only |
-
-Raw `source_attributes` are not exposed. Source URL, licence and kind remain in every record for attribution.
-
-### Filters (list only)
-
-| Parameter | Values |
-| --- | --- |
-| `type` | `library`, `cafe` |
-| `indoor_seating`, `outdoor_seating`, `has_wifi`, `has_outlets`, `laptop_allowed` | `true`, `false`, `unknown` (case-insensitive) |
-
-Filters combine with AND. `true` matches only confirmed values, so `/api/spaces/?type=cafe&indoor_seating=true` excludes cafés with false or unknown seating. `unknown` matches SQL NULL. Any other value returns 400. Results are not paginated and seating values are source-reported, not live occupancy.
-
-### Data-integrity rules
-
-- Setting or changing any facility through the API behaves like the Django admin: all five facility values are protected from future imports, the verification time is recorded and evidence notes are required.
-- For imported records (`source_kind` `official` or `osm`), changes to `name`, `space_type`, location, `address` or `description` return 400, because the next import would overwrite them. Correct these in the source data instead.
-- Imported records cannot be deleted (409 Conflict), because the next import would recreate them. Manually created records can be edited and deleted normally. API-created records are always `source_kind=manual`.
-- Validation reuses the model's own checks (`full_clean()`), including the finite-coordinate validator, so API, admin and import rules match.
-
-### Status codes and errors
-
-| Code | Meaning |
-| --- | --- |
-| 400 | Validation error, as `{"field": ["message"]}` |
-| 403 | Not logged in, missing model permission or missing CSRF token |
-| 404 | No study space with that ID |
-| 405 | Unsupported method (PUT) |
-| 409 | Attempt to delete an imported record |
-
-### Manual check
-
-```powershell
-# Public reads (no login)
-Invoke-RestMethod "http://localhost:8000/api/spaces/?type=cafe&indoor_seating=true" | Measure-Object
-Invoke-WebRequest -UseBasicParsing "http://localhost:8000/api/spaces/?indoor_seating=maybe"   # 400
-Invoke-WebRequest -UseBasicParsing -Method Post "http://localhost:8000/api/spaces/" -ContentType "application/json" -Body '{}'   # 403
-```
-
-For writes, log in at `/admin/`, open `/api/spaces/` and use the browsable API's form. Then check:
-
-- A record with latitude 91 is rejected.
-- A valid record can be created, PATCHed and deleted.
-- DELETE on an imported café returns 409.
-
-## Issue #3 verification
-
-| Check | Result |
-| --- | --- |
-| Django system check and `makemigrations --check` | No issues; no model changes requiring migrations |
-| Automated tests | All 70 passed: 54 existing plus 16 API tests |
-| Confirmed indoor-seat café filter on imported data | 91 records over HTTP, matching the Issue #2 count |
-| Invalid filter value / anonymous POST over HTTP | 400 / 403 |
-
-## Spatial search and area analysis (Issue #4)
-
-All three operations run in PostGIS through GeoDjango. Python never calculates distances or containment. The query functions are in [spaces/spatial.py](spaces/spatial.py). All endpoints are public and read-only.
-
-| Endpoint | Operation | PostGIS function |
+| Data | Source | Licence |
 | --- | --- | --- |
-| `GET /api/spaces/nearby/?lat=&lng=&radius=` | Spaces within `radius` metres, nearest first | `ST_DistanceSphere` |
-| `GET /api/spaces/nearest/?lat=&lng=` | Single closest matching space | `ST_DistanceSphere` + `LIMIT 1` |
-| `GET /api/areas/coverage/` | Library and café counts per administrative area | `ST_CoveredBy` |
+| Libraries | Dublin City Council, [Libraries DCC](https://data.smartdublin.ie/dataset/dublin-city-libraries) (Smart Dublin) | CC BY |
+| Administrative areas | Dublin City Council, [Administrative Areas DCC](https://data.smartdublin.ie/dataset/administrative-areas-dcc) | CC BY |
+| Cafés | © OpenStreetMap contributors, via the Overpass API | ODbL 1.0 |
+| Campus starting points | © OpenStreetMap contributors (element IDs recorded in `spaces/universities.py`) | ODbL 1.0 |
+| Map tiles | © OpenStreetMap contributors, OpenStreetMap tile server | Attribution required; [tile usage policy](https://operations.osmfoundation.org/policies/tiles/) |
+| Nunito font | The Nunito Project Authors (`spaces/static/spaces/fonts/OFL.txt`) | SIL Open Font License 1.1 |
 
-### Parameters and validation
+The exact snapshots used are committed in `data/raw/` with SHA-256 checksums, retrieval times and licences in `data/source-manifest.json`. Source choices, facility-tag mapping, identity handling and data-quality limitations are documented in **[docs/data-sources.md](docs/data-sources.md)**.
 
-- `lat` (−90..90) and `lng` (−180..180) are required decimal degrees in EPSG:4326 (WGS 84). NaN and infinity are rejected.
-- `radius` is required for `nearby`. It is in metres, must be greater than 0 and at most 10,000.
-- `nearby` and `nearest` accept the same `type` and facility filters as `/api/spaces/`. For example, `type=cafe&indoor_seating=true` matches only confirmed indoor seating. Filters apply before distance ordering, so `nearest` returns the closest *matching* space.
-- Invalid values return `400 {"field": ["message"]}`.
+## Known limitations and future improvements
 
-### Responses
+**Data**
 
-`nearby` returns a JSON list in the same format as `/api/spaces/`, plus `distance_m` (metres, one decimal place), ordered by distance. A search with no matches returns `200 []`.
+- Facility data is sparse and source-reported: of 633 cafés, 91 confirm indoor seating, 29 Wi-Fi and 1 power outlets; all library facilities are unknown. Seating values are not live availability.
+- Coverage is the Dublin City Council area only. UCD Belfield is outside it, so the app shows a coverage note for that campus.
+- Records reflect the committed snapshots (libraries list reviewed 2021, OpenStreetMap retrieved October 2026), not a live feed. Some café positions are approximate centres of buildings (`location_method = osm_center`).
+- There is no "quiet environment" information in any source, so there is no such filter.
 
-`nearest` returns one study-space object with `distance_m`. If nothing matches, it returns `404 {"detail": "No study space matches these filters."}`.
+**Application**
 
-`coverage` returns one row per area, ordered by name:
+- Facility counts on the filters reflect the moment the page loaded.
+- Choosing an arbitrary map point needs a pointer or touch; keyboard users can choose a campus, their location or a marker.
+- Geolocation needs a secure origin, so it works on `localhost` but not when the development server is opened from another device over plain HTTP.
+- The API is not paginated (657 records) and has no rate limiting.
+- The local setup uses Django's development server over HTTP; see [Deployment beyond local development](#deployment-beyond-local-development).
 
-```json
-[{"id": 1, "source_id": "central", "name": "CENTRAL", "library_count": 7, "cafe_count": 193, "total_count": 200}]
-```
+**Possible improvements:** facility reports from users with moderation; opening hours from OpenStreetMap; wider coverage beyond Dublin City Council; a geography column or projected index for index-assisted radius searches at larger scale; pagination; and a production deployment as outlined in [docs/deployment.md](docs/deployment.md#production-and-cloud-deployment).
 
-If no areas have been imported, `coverage` returns `200 []`.
+## Troubleshooting
 
-### Coordinate systems, units and accuracy
-
-- **Shared coordinate system:** stored points, stored boundaries and search points all use EPSG:4326, so no coordinate transformation happens at query time. Boundaries were converted from ITM (EPSG:2157) during the Issue #2 import.
-- **Distance units:** for longitude/latitude geometry, GeoDjango's `Distance` uses `ST_DistanceSphere`, which returns metres. The spherical model differs from the more exact spheroid by less than about 0.5%, which is acceptable for walking-distance search.
-- **Consistent distances:** one distance annotation is used to filter, sort and report results, so a returned `distance_m` never exceeds the requested radius.
-- **Boundary edges:** `ST_CoveredBy` includes points exactly on an edge, so a space on a shared border counts in both areas. Spaces outside every area are not counted.
-
-### Indexes and performance
-
-| Operation | Index use | Measured cost |
-| --- | --- | --- |
-| Coverage | `ST_CoveredBy` uses the GiST index on `location` (a bitmap index scan in `EXPLAIN`). Each boundary is passed as a subquery, so polygons never leave the database. | 1 + number-of-areas queries (6 for DCC) |
-| Nearby / nearest | `ST_DistanceSphere` is not index-assisted, so `EXPLAIN` shows a sequential scan. The distance for every row is computed inside PostgreSQL. | 1 query each |
-
-For 657 rows the sequential scan takes milliseconds, and at this table size the planner would choose it anyway. Index-assisted radius searches would need a geography column or a projected (ITM) expression index. Neither is justified at this data size.
-
-### Manual check
-
-Windows PowerShell 5.1 passes a JSON array down the pipeline as one object, so wrap list requests in parentheses before `Select-Object`. It also decodes UTF-8 names as ISO-8859-1 ("CaffÃ¨" instead of "Caffè"). Browsers, JavaScript and PowerShell 7 decode them correctly.
-
-```powershell
-(Invoke-RestMethod "http://localhost:8000/api/spaces/nearby/?lat=53.3498&lng=-6.2603&radius=300&type=cafe&indoor_seating=true") | Select-Object name, distance_m
-Invoke-RestMethod "http://localhost:8000/api/spaces/nearest/?lat=53.3498&lng=-6.2603&type=library" | Select-Object name, distance_m
-Invoke-RestMethod "http://localhost:8000/api/areas/coverage/" | Format-Table
-Invoke-WebRequest -UseBasicParsing "http://localhost:8000/api/spaces/nearby/?lat=53.3498&lng=-6.2603&radius=0"   # 400
-```
-
-To see the SQL and query plan:
-
-```powershell
-docker compose exec web /usr/local/bin/python manage.py shell -c "from spaces.models import StudySpace as S; from spaces.spatial import *; qs = spaces_within(S.objects.all(), search_point(53.3498, -6.2603), 500); print(qs.query); print(qs.explain())"
-```
-
-## Issue #4 verification
-
-| Check | Result |
+| Problem | Solution |
 | --- | --- |
-| Automated tests | All 84 passed: 70 existing plus 14 spatial tests |
-| Known geometry | 0.005° and 0.01° of latitude returned about 556 m and 1,112 m (±1 m); radius 1,100 m excluded and 1,120 m included the 1,112 m point |
-| Query counts (`assertNumQueries`) | Nearby 1, nearest 1, coverage 1 + areas |
-| Generated SQL | `ST_DistanceSphere` for distance; `EXPLAIN` showed the sequential scan described above |
-| Coverage on imported data | Central 200, North Central 52, North West 12, South Central 86, South East 307; total 657, equal to all imported records |
-| HTTP smoke checks | Filtered nearby search 200 (12 confirmed-seat cafés within 300 m of the test point); nearest library 200; radius 0 → 400 |
+| The map page loads but the map is blank and `map.js` returns 404 | Set `DJANGO_DEBUG=True` in `.env` and run `docker compose up -d web` (the development server serves static files only in debug mode). After adding new static files, run `docker compose restart web`. |
+| Map tiles show "Access blocked" | The browser is not sending a `Referer` header; the tile layer requests one with `referrerPolicy`. Hard-refresh (Ctrl+F5) to load the current `map.js`. |
+| Changes to code are not picked up | Synced folders (OneDrive, Dropbox) can delay file-change events; run `docker compose restart web`. Hard-refresh the browser for JavaScript and CSS. |
+| `Set DJANGO_SECRET_KEY …` or a similar error on start | `.env` is missing a value or still has a `change-me` placeholder. |
+| Port 8000 or 5050 is in use | Stop the other service, or change the host side of the port mapping. |
+| Network subnet overlaps | Set another private range in `DOCKER_SUBNET`, then `docker compose down` and `docker compose up -d` (data is kept). |
+| Database password change has no effect | `POSTGRES_*` values are only applied when the volume is first created. |
+| Import says areas are missing | Run `import_administrative_areas --repair-invalid` before the library and café imports. |
+| Logs | `docker compose logs --tail 50 web db pgadmin` (remove secrets before sharing). |
 
-## Interactive map (Issue #5)
+## Deployment beyond local development
 
-Open [http://localhost:8000/](http://localhost:8000/). The page loads every study space from `/api/spaces/` in one request and shows:
+The Compose setup is a **local development environment**: Django's development server, plain HTTP and a PostgreSQL superuser account. Running StudySmart publicly would need a WSGI server (for example Gunicorn), collected static files, HTTPS with secure cookies and HSTS, `DJANGO_DEBUG=False`, a restricted database role, managed secrets and backups. `manage.py check --deploy` reports exactly the HTTPS-related settings to enable. A step-by-step outline for a cloud host with managed PostGIS is in **[docs/deployment.md](docs/deployment.md#production-and-cloud-deployment)**, together with the security review, the clean-install procedure and the persistence check.
 
-- **Libraries** as teal squares marked "L" and **cafés** as terracotta circles marked "C" (after a search, the 10 results show their result numbers instead). Shape and letter differ as well as colour. Libraries are drawn above cafés so they are not hidden in the dense city centre. The legend shows how many of each are on the map.
-- A **popup** for each marker with the name, type, address and the five facilities. `true` shows "Yes", `false` "No" and `null` "Unknown"; unknown is never shown as confirmed. Popups state that facilities are source-reported, not live availability, and name the record's source and licence.
-- An **Area boundaries** outline layer, off by default, toggled from the layer control (top right). Hovering a boundary shows the area name.
-- A **search starting point**: originally a clicked map point; since Issue #15 a university campus, the current location or a point picked on the map (see [Frontend redesign](#frontend-redesign-issue-15)).
-- **Status messages** while loading, when no study spaces exist, and when either API request fails. A boundary failure does not affect the markers.
+## Development process
 
-### Implementation
+The work was planned as GitHub Issues and delivered one issue per feature branch, merged into `main` through pull requests:
 
-| File | Role |
+| Issue | Delivered |
 | --- | --- |
-| [spaces/templates/spaces/home.html](spaces/templates/spaces/home.html) | Bootstrap layout, search panel, map container and legend. API URLs come from `{% url %}` as `data-` attributes, so the JavaScript does not hard-code paths. |
-| [spaces/static/spaces/js/](spaces/static/spaces/js/) | Leaflet setup, API requests, markers, popups, boundary overlay and search; ES modules (see [JavaScript modules](#javascript-modules)) |
-| [spaces/static/spaces/css/map.css](spaces/static/spaces/css/map.css) | Responsive layout, marker and popup styles |
-
-Leaflet 1.9.4 and Bootstrap 5.3.3 (CSS only) load from public CDNs at pinned versions with Subresource Integrity hashes, so the browser refuses a modified file. No build step, API key or paid tile service is used. Base tiles come from the OpenStreetMap tile server, which is suitable for light development use under its [tile usage policy](https://operations.osmfoundation.org/policies/tiles/). That policy requires browsers to send a `Referer` header. Django's default `Referrer-Policy: same-origin` sends none to other sites, so the tile layer alone uses `strict-origin-when-cross-origin`: tile requests carry only the site origin (for example `http://localhost:8000/`), never page paths, and the rest of the site keeps Django's stricter default. Without this, every tile shows "Access blocked".
-
-**Coordinates.** `/api/spaces/` returns plain `latitude`/`longitude` numbers, which are passed to Leaflet as `[latitude, longitude]`. `/api/areas/` returns GeoJSON, whose positions are `[longitude, latitude]`; Leaflet's `L.geoJSON` reads that order itself. Automated tests check both orders.
-
-**Safe display.** Record text (names, addresses, area names) is inserted with `textContent`, never parsed as HTML, so a record created through the API cannot inject markup.
-
-### Boundary endpoint
-
-| Endpoint | Returns |
-| --- | --- |
-| `GET /api/areas/` | GeoJSON `FeatureCollection`; each feature has the area `id`, a `MultiPolygon` geometry and `properties` `{source_id, name}`, ordered by name |
-
-The endpoint is public and read-only (other methods return 405). PostGIS produces the geometry JSON with `ST_AsGeoJSON` in one query. Coordinates are rounded to five decimal places (about 1 m), which keeps the five DCC boundaries to about 330 KB without altering their shape. With no imported areas it returns an empty `FeatureCollection` and the map offers no overlay.
-
-### Static files and `DEBUG`
-
-Django's development server serves `map.js` and `map.css` only when `DJANGO_DEBUG=True`, which is the value in `.env.example`. With `DEBUG=False` the page loads but the map stays blank because its own script returns 404. After adding a new app `static/` folder, restart the server (`docker compose restart web`), because Django finds app static folders when it starts.
-
-A production deployment would need more than changing `DEBUG`: set `STATIC_ROOT`, run `collectstatic`, serve the collected files from a web server such as Nginx (or WhiteNoise), and keep `DEBUG=False` so error pages do not reveal settings and code. It would also serve the site over HTTPS. This is part of the deployment review in Issues #7–8.
-
-### Manual browser checks
-
-Use a current browser with developer tools open on the Console tab.
-
-1. **Load:** the map opens on Dublin, the legend shows Library (24) and Café (633), and the Console shows no errors.
-2. **Interaction:** zoom with the buttons, scroll wheel and pinch; drag to pan; click several markers of each type.
-3. **Popup accuracy:** open `/api/spaces/?type=library` in another tab and compare one library's name, address and facilities with its popup. Libraries should show all five facilities as "Unknown". Find a café with confirmed indoor seating (`/api/spaces/?type=cafe&indoor_seating=true`) and check its popup says "Yes".
-4. **Coordinates:** confirm markers fall on Dublin streets, not in the sea or elsewhere in the world. Click a known library and compare its map position with its `latitude`/`longitude` in the API.
-5. **Boundaries:** tick *Area boundaries* in the layer control; five dashed outlines appear and show their names on hover. Untick to hide them.
-6. **Starting point and responsive layout:** see the Issue #15 manual checks below; the original click-to-select pin and full-screen map layout were replaced there.
-7. **Legend and attribution:** at phone, tablet and desktop widths the legend and the attribution bar stay readable.
-8. **API failure:** run `docker compose stop db` and reload: a red "could not be loaded" message appears and the Console logs the HTTP error. Run `docker compose start db` and reload. DevTools *Offline* mode shows the library-load error instead.
-9. **Unsafe text:** log in at `/admin/`, create a manual study space through `/api/spaces/` named `<img src=x onerror=alert(1)>`, and check its popup shows the text literally with no alert. Delete the record afterwards.
-
-## Issue #5 verification
-
-| Check | Result |
-| --- | --- |
-| Automated tests | All 92 passed, including 4 boundary-endpoint tests and 3 new home-page tests |
-| Django system check and `makemigrations --check` | No issues; no model changes |
-| HTTP smoke checks | Home page, `map.js`, `map.css`, `/api/areas/` 200; POST `/api/areas/` 405; CDN files and OSM tiles reachable |
-| Boundary response on imported data | 5 features, about 327 KB, positions in `[longitude, latitude]` order |
-| Headless Edge render at 390 × 844 | 24 library and 633 café markers, legend counts matched, loading message cleared, layer control present, no JavaScript console errors |
-| Screenshots at phone and desktop widths | Map fills the viewport; legend, controls and attribution visible |
-| SRI hashes | Computed from the downloaded CDN files; they match Leaflet's and Bootstrap's published values |
-
-This table records the Issue #5 interface at the time. The first smoke check returned 404 for the new static files until the web server was restarted, as explained above. A test failed once because a code comment contained the word `innerHTML`, which the safe-display test searches for; the comment was reworded. Only step 1 of the manual checks was verified automatically (headless render); steps 2–9 require an interactive browser and are for the student to perform.
-
-## Search and filters (Issue #6)
-
-Issue #6 added radius and nearest searches, filters and area statistics. Issue #15 later reorganised the controls into a three-step panel; this section describes how searching and filtering work now, and the [Frontend redesign](#frontend-redesign-issue-15) section describes the controls and layout.
-
-### Facility filter availability
-
-When the page is rendered, `home()` in [views.py](spaces/views.py) counts the records that **confirm** each facility (value `true`) in one database query. False and unknown values do not count. A facility with 0 confirmed records is shown disabled, labelled "no confirmed records yet", because it could only ever return nothing. Other facilities show their count, for example "Wi-Fi (29 confirmed)".
-
-The filter becomes available automatically on the next page load after a confirmed value exists, whether from an import or a manually verified admin/API edit. No code or configuration change is needed. The API filters themselves are unchanged and always accept every facility. If the count query fails (for example, the database is down), the page still renders with all filters enabled and no counts, and the API error messages appear as before.
-
-**Limitation:** the counts reflect the moment the page loaded. Data imported or edited afterwards appears after a page reload.
-
-### Search and filter flow
-
-The page is always in one of three modes. Every change (starting point, distance, type or facility) re-runs the search with the current filters, so the same filters always apply to whatever is on the map:
-
-| Mode | When | Request |
-| --- | --- | --- |
-| All | No starting point yet, or after *Clear* | `GET /api/spaces/?<filters>` |
-| Nearby | A starting point is set | `GET /api/spaces/nearby/?lat=&lng=&radius=&<filters>` |
-| Nearest | *Show nearest match*, offered when nothing is within the radius | `GET /api/spaces/nearest/?lat=&lng=&<filters>` |
-
-1. **Filters to parameters.** One function, `filterParams()` in `search.js`, builds the filters for all three modes. One selected type sends `type=library` or `type=cafe`; both selected sends no type filter (everything); none selected sends no request and shows a message. Each selected facility adds `<field>=true`. The API combines all parameters with AND.
-2. **Re-running.** Any filter change, a new starting point or *Reset filters* (which restores the defaults written in the page: 1 km, both types, no facilities) runs the search again in nearby mode.
-3. **Server-side spatial work.** Radius filtering, distance ordering and the nearest choice are done by PostGIS (`ST_DistanceSphere`), and the API returns `distance_m`. The browser only formats distances, takes the first 10 nearby results, and draws the radius circle and line for display. It never decides which spaces are inside the radius.
-4. **Rapid repeated searches.** Every search request cancels the previous one with an `AbortController`. An older, slower response therefore cannot overwrite a newer search. Cancelled requests are ignored silently.
-5. **Results.** The 10 nearest matches appear as numbered cards and matching numbered markers; the summary gives the total, for example "Showing 10 of 250 nearby study spaces (within 1.0 km), nearest first."
-
-### States and messages
-
-- **Loading:** "Loading study spaces…", "Searching nearby…" or "Finding the nearest match…", with placeholder cards. The results summary is the page's single live region, so screen readers announce progress once.
-- **Empty:** for example "No study spaces match your filters within 1.0 km. StudySmart covers the Dublin City Council area.", with *Search a wider area* and *Show nearest match*. When a facility filter is on, the message adds "Facility filters only include confirmed values." A nearest search with no match (`404`) is treated as an empty result, not an error.
-- **Error:** the summary reads "Study spaces could not be loaded. Change a filter or try again shortly." and a red alert appears on the map. The error is logged to the console; the next successful search clears it.
-- **No type selected:** "Select at least one type: Libraries or Cafés."
-- **Location errors:** separate messages for geolocation denied, unavailable and timed out, and for pages not served from a secure origin.
-- Area statistics and boundaries load separately, so their failure never blocks searching; map-level warnings are announced as alerts.
-
-### JavaScript modules
-
-The JavaScript uses native ES modules (`<script type="module">`), so there is no build step or extra dependency.
-
-| Module | Responsibility |
-| --- | --- |
-| [map.js](spaces/static/spaces/js/map.js) | Entry point: creates the map and tile layer, starts the other modules |
-| [api.js](spaces/static/spaces/js/api.js) | `fetchJson` and HTTP error handling |
-| [search.js](spaces/static/spaces/js/search.js) | Starting point (campus, geolocation, pick on map), filters, the three modes, cancelling superseded requests, card–marker selection |
-| [results.js](spaces/static/spaces/js/results.js) | Result cards, honest facility summaries, category illustrations, loading placeholders |
-| [markers.js](spaces/static/spaces/js/markers.js) | Marker icons (letters or result numbers), highlighting, stacking order, popups, distance formatting. Each marker has one click/Enter handler that asks `search.js` first (pick-on-map mode or result selection) and otherwise opens the popup. |
-| [areas.js](spaces/static/spaces/js/areas.js) | Boundary overlay and the per-area statistics table |
-| [status.js](spaces/static/spaces/js/status.js) | Loading and error messages over the map |
-
-All API text is inserted with `textContent` or as DOM elements, never as HTML strings. A test checks that no module uses `innerHTML`, `outerHTML`, `insertAdjacentHTML` or `document.write`.
-
-### Data limitations
-
-- **Library facilities are unknown.** The DCC library CSV has no facility columns. Its description "free access to computers and the internet" does not establish Wi-Fi, outlets or laptop use (see [data-sources.md](docs/data-sources.md)), so all five facilities stay unknown rather than being guessed. Libraries appear in every search without a facility filter. A facility filter hides them, and the panel says why. Facilities can be added honestly only through manual verification: an admin edit or API PATCH with evidence notes, which also locks the values against reimport.
-- **Café facilities are sparse.** Among the 633 cafés, indoor seating is confirmed for 91, Wi-Fi for 29 and power outlets for 1.
-- **Power outlets.** One café (Filo, OSM `way/970119309`) has `socket:bs1363=yes`. `bs1363` is OSM's key for the Irish/UK type G domestic socket, and OSM documents `socket:*` for "anywhere that electric power is supplied for the public or customers". The tag is on the café itself, not a separate charging point. Imports before the Issue #6 follow-up ignored this socket key; the mapping now recognises it, so the outlet filter shows "(1 confirmed)". A database imported before that change shows "(no confirmed records yet)" until `import_cafes` is run again, which updates only Filo.
-- **Ambiguous OSM values stay unknown:** `indoor_seating=bar_table` (1 café) and `internet_access=yes` (16 cafés) do not explicitly confirm indoor seating or Wi-Fi.
-- **Quiet environment** has no source data or model field, so there is no filter for it; it is out of scope.
-- **University study spaces** are out of scope (see Current scope); campuses are only search starting points.
-- Area counts include all recorded spaces regardless of filters. Spaces outside every area are not counted.
-- Seating values are source-reported, not live occupancy.
-- Choosing an arbitrary map point needs a pointer or touch. Keyboard users can choose a campus, use their location, or in *Pick on map* mode Tab to a marker and press Enter.
-
-### Manual browser checks
-
-The current manual checks are in the [Frontend redesign](#frontend-redesign-issue-15) section. Checks specific to searching and filtering:
-
-1. **Facility availability:** each facility chip shows its confirmed count; Power outlets shows "(1 confirmed)". Ticking it with *Pick on map* set near Filo (Prospect Road, Glasnevin) shows Filo.
-2. **Combined filters:** with Trinity College Dublin as the starting point, select only Cafés and tick Indoor seating and Wi-Fi. Every result's popup shows both as "Yes"; if none match, the message explains that facility filters include only confirmed values.
-3. **Rapid changes:** change the campus several times quickly. The final results match the last campus; in DevTools → Network, earlier requests show as cancelled.
-4. **API failure:** with results shown, run `docker compose stop db`, then change a filter: an error appears in the summary and on the map. Run `docker compose start db` and change a filter again: results return and the error clears.
-5. **Area statistics:** in *About the data*, the heading reads "All Recorded Study Spaces by Area". Compare the table with `/api/areas/coverage/`, then change filters and search: the numbers do not change.
-
-## Issue #6 verification
-
-These tables record the Issue #6 interface at the time (a right-hand sidebar with *Search within radius* and *Find nearest* buttons), before Issue #15 reorganised it.
-
-| Check | Result |
-| --- | --- |
-| Automated tests | All 96 passed: 92 existing plus 4 new. The new tests check that filter controls match API parameters, that every control has a label, that no module inserts HTML, and that combined facility filters require every facility confirmed (nearby and nearest). |
-| Django system check | No issues; no model, serializer or migration changes |
-| JavaScript | `node --check` passes for all six modules; every import matches an export |
-| Scripted headless Edge test (25 checks, against the running app and imported data) | All passed: initial 657 markers; area table matches the coverage API; nearby (105 at 1 km) and 250 m counts equal the API; combined filters equal the API; outlets empty-state message; reset; nearest name, distance, highlight and label, with pin and result both on screen; nearest respects type; no-type warning; 8 rapid requests, 7 cancelled, last mode displayed; new location re-runs search; simulated HTTP 500 shows an error and recovers; clear location restores all; no unexpected console errors |
-| Screenshots at 1366 × 900 and 390 × 844 | Sidebar on the right on desktop and below the map on phone; highlighted nearest result, label, line and pin all visible |
-
-At the time the scripted test lived outside the repository; its current version is [frontend-tests/map-ui.test.mjs](frontend-tests/map-ui.test.mjs), run in CI (see [Browser tests](#browser-tests)). Two of its first-run failures were test problems (a click landing on a marker, and too short a wait for a slow response), not application faults; the network log confirmed superseded requests were cancelled. The screenshots showed one real issue: opening the nearest result's popup automatically panned the map and could push the search pin off screen, so a permanent distance label replaced the automatic popup. Manual checks 2 and 11 (keyboard and real devices) still need an interactive browser.
-
-### Data-quality and usability follow-up
-
-| Check | Result |
-| --- | --- |
-| Automated tests | All 103 passed: 96 previous plus 7 new. The new tests cover `bs1363` sockets (`yes`/count → true; `0`/`no`/conditional/conflicting → unknown), the API `=false` filter, the outlet checkbox being disabled when only false/unknown records exist and enabled with the correct count once records confirm it, filters staying enabled if the count query fails, the selection-mode controls, and the unfiltered area-statistics label. Home-page tests now use `TestCase` because the page queries the database. |
-| `import_cafes --dry-run` | `read=1090, created=0, updated=1, unchanged=632`. The only change is Filo `has_outlets` unknown → true, and Filo is not facility-locked. The rollback was confirmed. The real import was run afterwards (2026-10-29): `updated=1`, then `unchanged=633` on a repeat. |
-| Live page | Before the real import: Indoor seating "(91 confirmed)", Wi-Fi "(29 confirmed)", Power outlets disabled "(no confirmed records yet)". After it: Power outlets "(1 confirmed)", enabled. |
-| Scripted headless Edge test (33 checks) | All passed, including: map and marker clicks outside selection mode do not choose a location and markers open popups; the mode is visible (frame, banner, `aria-pressed`) and closes open popups; Cancel and Esc end it; a marker click in the mode opens no popup, ends the mode and chooses the marker's exact position (nearest search from it returns the same café at 0.5 m); the outlet checkbox state matches the API count; all previous Issue #6 checks |
-| Schema | No model, migration, serializer or API changes |
-
-## Testing and security review (Issue #7)
-
-### Test suite
-
-121 Django tests run against a separate PostGIS test database (the PostGIS engine is fixed in settings; one test queries `PostGIS_Version()`). They use fictional points and polygons with known distances and containment, synthetic import fixtures copied to a temporary folder, and no network access. The suite passes in default order and in shuffled order (`--shuffle`), so tests do not depend on each other.
-
-```powershell
-docker compose exec web /usr/local/bin/python manage.py test spaces
-docker compose exec web /usr/local/bin/python manage.py test spaces --shuffle
-```
-
-Issue #7 audited the existing 103 tests and added 18 for the gaps found:
-
-| Area | New tests |
-| --- | --- |
-| CRUD updates | A PATCH of a manual record updates the name and one coordinate and keeps the other; invalid PATCH values (latitude 91, text longitude, `university` type, blank name, facility `maybe`) return 400 and leave the record unchanged |
-| Create validation | Invalid `space_type` and facility values return 400; `null` is stored as unknown without locking |
-| Provenance | Read-only fields (`source_kind`, `source_id`, `facility_import_locked`, timestamps) sent by a client are ignored, so a record cannot pretend to be imported (which would make it undeletable) |
-| Permissions | A user with only *add* permission can create but cannot PATCH or DELETE; anonymous POST/PUT/PATCH/DELETE on every API URL returns 403 or 405 and changes nothing |
-| HTTP errors | PUT 405; PATCH/DELETE of a missing record 404; malformed JSON 400 |
-| Spatial | Nearest with missing `lat`/`lng`, invalid facility or type: 400 naming the field; radius 10,000 m (the maximum) accepted; `indoor_seating=unknown` in a radius search returns only unknown records, combined with type and radius |
-| Containment | An L-shaped area counts points in both arms and on a vertex, but not in the notch inside its bounding box, nor 0.7 m outside an edge, so exact `ST_CoveredBy` geometry is used, not an approximation |
-| Configuration | A missing database password is rejected; default `ALLOWED_HOSTS` is exactly `localhost`, `127.0.0.1` and `[::1]`; blank host entries are ignored; pages and the API send `X-Frame-Options: DENY`, `nosniff`, `Referrer-Policy: same-origin` and `Cross-Origin-Opener-Policy: same-origin` |
-
-### Security review
-
-| Area | Finding |
-| --- | --- |
-| Secrets | `DJANGO_SECRET_KEY` and database credentials come only from environment variables; missing values and `change-me` placeholders stop Django starting. `.env` is ignored by Git and Docker and has never been committed; only `.env.example` is tracked. |
-| `DEBUG` / hosts | `DEBUG` defaults to `False` and accepts only `True`/`False`. Hosts default to the three local names, with no wildcard; a request with another `Host` header returns 400. |
-| Authentication and CSRF | Session authentication only (Basic disabled over HTTP); writes need the matching Django model permission and a CSRF token. |
-| Write endpoints | Only `/api/spaces/` and `/api/spaces/{id}/` accept writes, and only with permission. Nearby, nearest, `/api/areas/` and `/api/areas/coverage/` are read-only. |
-| Docker | Django and pgAdmin are published on `127.0.0.1` only; PostgreSQL has no host port and is reachable only on the project network. The Django container runs as an unprivileged user. |
-| Browser | Popups and lists insert API text with `textContent`; CDN files are pinned with SRI hashes; responses deny framing. |
-
-`manage.py check --deploy` reports:
-
-| Warning | Meaning | Status |
-| --- | --- | --- |
-| `security.W018` | `DEBUG` is `True` | **Local development only.** It comes from `.env`; it disappears with `DJANGO_DEBUG=False`, which production must use. |
-| `security.W004` (HSTS), `W008` (SSL redirect), `W012` / `W016` (secure-only session and CSRF cookies) | The site is not served over HTTPS | **Production requirement.** These settings only work behind HTTPS, which the local `http://localhost` setup does not have. A production deployment must add HTTPS and then enable them. They are not vulnerabilities on a loopback-only development server. |
-
-No other deployment warnings are reported (for example, no weak-secret warning). No settings were changed in Issue #7.
-
-### Remaining risks
-
-These are acceptable for local development and must be addressed before any public deployment:
-
-- The development server (`runserver`) and plain HTTP are used, and HTTPS settings are off (see above).
-- Django connects as the PostgreSQL superuser created by the image; production needs a restricted role.
-- There is no rate limiting, pagination or admin login throttling; the dataset is 657 records.
-- There is no Content-Security-Policy header; pages load scripts from two pinned CDNs.
-- Coordinate ranges are enforced by model validation on every application route (API, admin, imports), not by a database constraint, so raw SQL could bypass them.
-
-## Frontend redesign (Issue #15)
-
-The page is a left panel (controls and results) beside the map. Below 992 px it stacks as controls, map, then results, and the Filters section starts collapsed with a one-line summary (for example "1.0 km · All types"), so the map is visible on the first screen of a phone.
-
-### Flow
-
-1. **Starting point.** One of:
-   - **University campus:** a fixed list in [spaces/universities.py](spaces/universities.py). Each point is the representative point of the campus's OpenStreetMap element (the element ID is recorded), retrieved on 2026-10-29. Campuses are search origins only; they are never stored as study spaces or returned by the API. UCD Belfield is outside the Dublin City Council data area (PostGIS: no study space within 1 km), so selecting it shows a coverage note; searching is still allowed.
-   - **Use my location:** browser geolocation. Permission denied, position unavailable and timeout (10 s) each show a specific message suggesting a campus or a map point instead. Browsers only allow geolocation on secure origins: it works at `http://localhost:8000`, but not when the dev server is opened from another device over plain HTTP, where the page explains this.
-   - **Pick on map:** the Issue #6 selection mode (tap the map or a marker; Cancel or Esc to stop).
-2. **Filters.** Distance (500 m, 1 km, 2 km, 5 km), type (Libraries, Cafés) and confirmed facilities, as toggle chips. Facility chips keep their database counts and are disabled when nothing confirms them.
-3. **Results.** Every change runs the search automatically with `/api/spaces/nearby/`. PostGIS returns all matches nearest first; the page shows the first 10 as cards and as numbered markers, and the summary states the total, for example "Showing 10 of 250 nearby study spaces (within 1.0 km), nearest first."
-   - Clicking a card highlights it and its marker, centres the map on the marker and opens its popup; on phones the page scrolls back to the map. Clicking a marker highlights its card (and scrolls the panel to it on large screens).
-   - Where markers overlap, the nearer (lower-numbered) result is drawn on top, and the selected result above all.
-   - **No matches:** the page offers **Search a wider area** (next radius) and **Show nearest match**, which uses `/api/spaces/nearest/` and draws a dashed line to the result.
-   - Before a starting point is chosen, the map shows all matching spaces, as before.
-
-### Result cards
-
-Each card shows the result number, name, type, PostGIS distance and a facility summary: confirmed facilities as green "✓" chips, confirmed absences as grey "No …" chips, and unknown values only as a count ("3 not recorded", or "Facilities not recorded" when all five are unknown). The thumbnail is a category illustration (a book or a cup icon, labelled "illustration (no photo available)"); the data contains no photographs, so none are shown or fetched.
-
-### Files
-
-| File | Role |
-| --- | --- |
-| [spaces/universities.py](spaces/universities.py) | Campus list with OpenStreetMap provenance |
-| [views.py](spaces/views.py) `home()` | Passes campuses, radius choices and facility counts to the template |
-| [home.html](spaces/templates/spaces/home.html) | Three-step panel, results list, collapsible "About the data" (area statistics and attribution), inline SVG icons |
-| [map.css](spaces/static/spaces/css/map.css) | Design tokens (warm cream background, indigo accent, teal libraries, terracotta cafés; text and markers keep at least 4.5:1 contrast), panel and responsive layout, chips, cards, markers |
-| [fonts/](spaces/static/spaces/fonts/) | Nunito variable font (39 KB, Latin), self-hosted so the page makes no third-party font request; SIL Open Font License in `OFL.txt` |
-| [search.js](spaces/static/spaces/js/search.js) | Starting point (campus, geolocation, map), filters, automatic search, cancelling superseded requests, card–marker selection |
-| [results.js](spaces/static/spaces/js/results.js) (new) | Result cards, facility summary, illustration, loading placeholders |
-| [markers.js](spaces/static/spaces/js/markers.js) | Numbered markers, highlighting and stacking order |
-
-### Verification
-
-| Check | Result |
-| --- | --- |
-| Django tests | 125 passed (121 previous plus 4 campus tests), also in shuffled order. Template tests now check the radius choices are within the API's limit, every control is labelled, and `results.js` never inserts HTML. Campus tests check every point is valid, in Dublin and traceable to an OSM element; that only UCD has a coverage note; that each campus is rendered with its coordinates; and that campuses are not study spaces. |
-| Scripted headless Edge test (37 checks, run twice) | All passed, including: card order and numbers equal the nearby API; numbered markers match cards; card facility chips match true/false/unknown in the API; card ↔ marker highlighting; overlapping markers stack nearest on top; filter changes and reset; UCD note, empty state, nearest fallback and wider area; geolocation granted, denied and unavailable; pick on map (point and marker); rapid campus changes; API failure and recovery; desktop, tablet (768 px) and phone (390 px) layouts with no horizontal scrolling, collapsed filters and the map on the first screen; no unexpected console errors |
-
-### Manual checks
-
-Desktop (≥ 992 px):
-
-1. The page opens with all spaces on the map and "657 study spaces match your filters".
-2. Choose **Trinity College Dublin**: "Showing 10 of … nearby study spaces", 10 cards and markers 1–10.
-3. Click card 3: the card and marker 3 are highlighted and the popup opens. Click marker 5: card 5 is highlighted and scrolled into view.
-4. Compare a card's chips with its popup: "✓" for Yes, "No …" for No, and unknown values only counted.
-5. Tick Indoor seating: results re-run; every popup shows indoor seating Yes. Click **Reset filters**.
-6. Choose **UCD Belfield**: the coverage note and "No study spaces…" appear. Click **Show nearest match**, then choose 1 km again and click **Search a wider area**.
-7. Click **Use my location** and allow it (results from your position), then repeat and block it in the browser's site settings (a "Location access was denied" message).
-8. Click **Pick on map**, then a map point; repeat and click a marker: the search starts there and no popup opens.
-9. Click **Clear**: all spaces return. Open **About the data**: the area table and attribution.
-
-Mobile (browser DevTools device mode at 390 × 844 and 768 × 1024; enable touch simulation). A real phone cannot reach this setup, because Compose publishes Django on `127.0.0.1` only; that is deliberate (see the Issue #7 security review). Device mode at `http://localhost:8000` also keeps geolocation available.
-
-1. Reload at that size: the campus selector, a collapsed **Filters** bar showing "1.0 km · All types", and the top of the map are on the first screen.
-2. Choose a campus: markers appear on the map; scroll down for the cards.
-3. Tap a card: the page scrolls back up to the map with the marker highlighted and its popup open.
-4. Open Filters, change the distance: the summary line and results update.
-5. Tap **Pick on map**: the page scrolls to the map with the blue frame and banner; tap a point.
-6. There is no sideways scrolling, and every control can be tapped comfortably.
-
-## Continuous integration and clean-install verification
-
-### Continuous integration
-
-[.github/workflows/tests.yml](.github/workflows/tests.yml) runs on every push and pull request. It reuses this repository's `Dockerfile` and `docker-compose.yml`, so CI uses the same Python, GDAL/GEOS/PROJ and PostGIS 17-3.6 as local development. It writes a test-only `.env` (throwaway values, `DJANGO_DEBUG=False`; no repository secrets), then:
-
-1. validates the Compose file and builds the Django image;
-2. starts PostGIS and waits for its health check;
-3. runs `manage.py check`, `makemigrations --check --dry-run` and `manage.py test spaces --shuffle`;
-4. starts the web server, imports the committed source snapshots and runs the browser tests (below) in the runner's headless Chrome;
-5. on failure, keeps the browser screenshots and service logs; always removes the CI containers and volumes.
-
-The browser stage starts the web server with `DJANGO_DEBUG=True`, because Django's development server only serves the app's own JavaScript and CSS in debug mode (see [Static files and `DEBUG`](#static-files-and-debug)); the checks and unit tests run with `DEBUG=False`.
-
-First run (commit `573c3ca`, 2026-10-29): **passed** in about one minute. The log shows PostGIS healthy, no system-check issues, no missing migrations, and 129 tests passing in random order, including `test_postgis_is_available`. The same commands also pass locally with `DJANGO_DEBUG=False`; no application or settings changes were needed.
-
-### Browser tests
-
-[frontend-tests/map-ui.test.mjs](frontend-tests/map-ui.test.mjs) tests the map page in a real headless browser (38 checks): card order and numbers against the nearby API, numbered markers, honest facility chips, card and marker highlighting and stacking, filters and reset, the UCD empty state with nearest and wider-area fallbacks, geolocation granted/denied/unavailable, pick on map, rapid changes, API failure and recovery, the single `h1` and live region, the self-hosted font, and desktop/tablet/phone layouts. Expected values are read from the running API, so the checks follow the imported data.
-
-It uses Node's built-in WebSocket to drive Chrome, Chromium or Edge through the DevTools protocol, so it needs **no npm packages**. To run it locally, with the stack running and the snapshots imported:
-
-```powershell
-node frontend-tests/map-ui.test.mjs
-```
-
-This needs Node 22 or later and Chrome, Chromium or Edge (found automatically, or set `BROWSER` to its path). Optional settings: `STUDYSMART_URL` (default `http://localhost:8000`), `BLOCK_MAP_TILES=1` to avoid downloading OpenStreetMap tiles (CI does this, out of respect for the tile servers' usage policy; the checks do not need tiles) and `SCREENSHOT_DIR` to save screenshots. It prints one line per check and exits with code 1 if any check fails.
-
-### Clean-install verification
-
-On 2026-10-29 the repository was installed from a fresh clone (branch `feature/ci-quality`, commit `573c3ca`) following only this README, without affecting the existing development stack.
-
-**Isolation.** The clone's `.env` was created from `.env.example` with new random secrets plus `COMPOSE_PROJECT_NAME=studysmart-fresh` and `DOCKER_SUBNET=172.30.60.0/24`, giving it its own containers, network and `studysmart-fresh_*` volumes. An uncommitted `docker-compose.override.yml` in the clone published it on other host ports:
-
-```yaml
-services:
-  web:
-    ports: !override
-      - "127.0.0.1:18000:8000"
-  pgadmin:
-    ports: !override
-      - "127.0.0.1:15050:80"
-```
-
-Every command used `docker compose -p studysmart-fresh …`.
-
-| Step (README command) | Result |
-| --- | --- |
-| `config --quiet`, `build web` | Passed; cold build about 5 minutes |
-| `up -d db pgadmin`, `run --rm web … migrate`, `up -d web` | PostGIS healthy; all migrations applied, including `spaces.0001_initial` |
-| `import_administrative_areas --repair-invalid` (dry run, then real), `import_libraries`, `import_cafes` | 5 areas, 24 libraries, 633 cafés (408 outside the area, 49 unnamed rejected), matching the recorded counts |
-| The three imports again | All `unchanged`; no duplicates |
-| `check --database default`, `pip check`, `showmigrations`, `test spaces` | No issues; no broken requirements; migration applied; 129 tests passed |
-| HTTP checks on port 18000 | Page, scripts, stylesheet, font and all API endpoints 200; anonymous POST 403; coverage totals 657; nearby search from Trinity returns 250 within 1 km |
-| Scripted headless browser check (40 checks; now [frontend-tests/map-ui.test.mjs](frontend-tests/map-ui.test.mjs)) | All passed |
-| Existing development stack afterwards | Unchanged: same containers, ports, volumes and row counts |
-
-**Findings.**
-
-- No hidden dependency on local files or existing database state: everything needed (code, migrations, source snapshots, identity maps, manifest) is in Git.
-- A fresh import includes the Issue #6 follow-up `socket:bs1363` mapping, so one café (Filo) has confirmed power outlets and the outlet filter shows "(1 confirmed)". A database imported before that change needs `import_cafes` once more; the development database was updated this way on 2026-10-29 (one record changed).
-- The top-level `name: studysmart` and fixed host ports mean a second copy needs a different project name and an override file, as above.
-- The first build downloads the base images and Python packages and needs internet access; later starts do not.
-
-To remove only the test installation afterwards, run `docker compose -p studysmart-fresh down --volumes` from the clone after checking `docker volume ls` lists only `studysmart-fresh_*` volumes for that project.
-
-## Development and attribution
-
-Follow [AGENTS.md](AGENTS.md). Imported data is source-reported and has not been independently surveyed.
-
-AI assistance was used for the initial documentation, Issues #1–7 and the Issue #15 redesign. The student must review, verify and understand the work, and document assistance according to the module policy.
+| #1 Django and Docker environment | Compose services, PostGIS connection, environment-based secrets |
+| #2 PostGIS models and data import | Models, migrations, spatial indexes, repeatable imports |
+| #3 CRUD REST API | Serializers, permissions, validation, filters |
+| #4 Spatial search and area analysis | Radius, nearest and containment queries |
+| #5 Interactive Leaflet map | Map page, popups, boundary overlay |
+| #6 Search and filter interface | Searches, filters, facility handling |
+| #7 Testing and security | Test coverage gaps, security review |
+| #15 Frontend redesign | Three-step search flow, result cards, responsive layout |
+| #8 Documentation and final verification | This documentation and the final checks |
+
+Continuous integration, a verified clean installation and the engineering decisions are recorded in [docs/testing.md](docs/testing.md), [docs/deployment.md](docs/deployment.md) and [docs/architecture.md](docs/architecture.md#design-decisions). Project conventions for contributors are in [AGENTS.md](AGENTS.md).
+
+## Attribution
+
+Library and area data © Dublin City Council (CC BY). Café and campus data © OpenStreetMap contributors (ODbL). Map tiles © OpenStreetMap contributors. Leaflet, Bootstrap and Django are used under their respective open-source licences. Nunito is used under the SIL Open Font License.
+
+AI assistance was used for the initial documentation, Issues #1–8 and the Issue #15 redesign. The student must review, verify and understand the work, and document assistance according to the module policy.
