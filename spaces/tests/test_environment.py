@@ -43,13 +43,16 @@ class HomePageTests(TestCase):  # The page counts confirmed facilities, so it ne
         types = re.findall(r'name="type" value="([^"]+)"', content)
         facilities = re.findall(r'name="facility" value="([^"]+)"', content)
         self.assertEqual(sorted(types), sorted(StudySpace.SpaceType.values))
-        self.assertEqual(facilities, ["indoor_seating", "has_wifi", "has_outlets"])
+        self.assertEqual(facilities, ["indoor_seating", "has_wifi"])
         self.assertTrue(set(facilities) <= set(FACILITY_FIELDS))
         # Every offered radius must be one the nearby API accepts (> 0 and within its maximum).
         radii = [int(value) for value in re.findall(r'name="radius" value="(\d+)"', content)]
         self.assertEqual(radii, [500, 1000, 2000, 5000])
         self.assertTrue(all(0 < radius <= MAX_SEARCH_RADIUS_M for radius in radii))
         self.assertRegex(content, r'name="radius" value="1000" id="radius-1000" checked')
+        sizes = re.findall(r'name="result-size" value="(\d+)"', content)
+        self.assertEqual(sizes, ["10", "25", "50"])
+        self.assertRegex(content, r'name="result-size" value="10" id="result-size-10" checked')
 
     def test_every_form_control_has_a_label(self):
         content = self.client.get(reverse("spaces:home")).content.decode()
@@ -57,6 +60,11 @@ class HomePageTests(TestCase):  # The page counts confirmed facilities, so it ne
         labelled_ids = set(re.findall(r'<label[^>]*\bfor="([^"]+)"', content))
         self.assertTrue({"campus-select", "radius-1000", "type-cafe"} <= set(control_ids))
         self.assertEqual(set(control_ids) - labelled_ids, set())
+
+    def test_header_links_to_the_about_page(self):
+        content = self.client.get(reverse("spaces:home")).content.decode()
+        link = re.search(rf'<a class="nav-pill" href="{reverse("spaces:about")}">(.*?)</a>', content, re.S)
+        self.assertEqual(re.sub(r"<svg.*?</svg>", "", link.group(1), flags=re.S).strip(), "About")
 
     def test_page_has_a_single_h1(self):
         content = self.client.get(reverse("spaces:home")).content.decode()
@@ -137,26 +145,30 @@ class HomePageTests(TestCase):  # The page counts confirmed facilities, so it ne
 
     def test_facility_without_confirmed_records_is_disabled(self):
         # False and unknown values are not confirmations.
-        self.make_space(has_outlets=False)
-        self.make_space(has_outlets=None)
-        checkbox, label = self.facility_checkbox("has_outlets")
+        self.make_space(has_wifi=False)
+        self.make_space(has_wifi=None)
+        checkbox, label = self.facility_checkbox("has_wifi")
         self.assertIn("disabled", checkbox)
-        self.assertEqual(label, "Power outlets (no confirmed records yet)")
+        self.assertEqual(label, "Wi-Fi (no confirmed records yet)")
 
     def test_facility_becomes_available_once_a_record_confirms_it(self):
-        self.make_space(has_outlets=True)
-        self.make_space(has_outlets=True, has_wifi=False)
-        checkbox, label = self.facility_checkbox("has_outlets")
+        self.make_space(has_wifi=True)
+        self.make_space(has_wifi=True, indoor_seating=False)
+        # The filters apply only to cafés, so a library confirming Wi-Fi is not counted.
+        StudySpace.objects.create(
+            name="Fictional Library", space_type="library", location=Point(-6.26, 53.35, srid=4326), has_wifi=True,
+        )
+        checkbox, label = self.facility_checkbox("has_wifi")
         self.assertNotIn("disabled", checkbox)
-        self.assertEqual(label, "Power outlets (2 confirmed)")
-        self.assertIn("disabled", self.facility_checkbox("has_wifi")[0])
+        self.assertEqual(label, "Wi-Fi (2 confirmed)")
+        self.assertIn("disabled", self.facility_checkbox("indoor_seating")[0])
 
     def test_filters_stay_enabled_if_counts_cannot_be_read(self):
-        with mock.patch("spaces.views.StudySpace.objects.aggregate", side_effect=DatabaseError):
+        with mock.patch("spaces.views.StudySpace.objects.filter", side_effect=DatabaseError):
             response = self.client.get(reverse("spaces:home"))
         self.assertEqual(response.status_code, 200)
         content = response.content.decode()
-        for field in ("indoor_seating", "has_wifi", "has_outlets"):
+        for field in ("indoor_seating", "has_wifi"):
             checkbox = re.search(rf'<input[^>]*id="facility-{field}"[^>]*>', content).group()
             self.assertNotIn("disabled", checkbox)
         self.assertNotIn("confirmed records yet", content)
@@ -186,6 +198,27 @@ class HomePageTests(TestCase):  # The page counts confirmed facilities, so it ne
         self.assertEqual(SpatialReference(4326).srid, 4326)
 
 
+@override_settings(ALLOWED_HOSTS=["testserver"])
+class AboutPageTests(SimpleTestCase):  # A static page: no database queries.
+    def test_about_page_explains_the_app_and_links_back_to_the_map(self):
+        response = self.client.get(reverse("spaces:about"))
+        self.assertEqual(response.status_code, 200)
+        content = response.content.decode()
+        self.assertEqual(re.findall(r"<h1[^>]*>(.*?)</h1>", content, re.S), ["About StudySmart"])
+        for heading in ("Who it's for", "How to use it", "About the information"):
+            self.assertIn(heading, content.replace("&#x27;", "'"))
+        self.assertIn(f'href="{reverse("spaces:home")}"', content)
+        # Data sources are attributed as on the map.
+        self.assertIn("https://data.smartdublin.ie/dataset/dublin-city-libraries", content)
+        self.assertIn("https://www.openstreetmap.org/copyright", content)
+
+    def test_about_page_describes_the_offered_choices(self):
+        # The text is built from the same settings as the map page, so it cannot drift.
+        content = self.client.get(reverse("spaces:about")).content.decode()
+        self.assertRegex(content, r"500 m\s+to 5 km")
+        self.assertIn("10, 25, 50", content)
+
+
 class DatabaseConnectionTests(TestCase):
     def test_postgis_is_available(self):
         with connection.cursor() as cursor:
@@ -212,6 +245,26 @@ class SettingsEnvironmentTests(SimpleTestCase):
             text=True,
             check=False,
         )
+
+    def test_https_hardening_clears_every_deployment_warning(self):
+        environment = {**os.environ, "DJANGO_DEBUG": "False", "DJANGO_HTTPS": "True"}
+        result = subprocess.run(
+            [sys.executable, "manage.py", "check", "--deploy", "--fail-level", "WARNING"],
+            env=environment, capture_output=True, text=True, check=False,
+        )
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertIn("no issues", result.stdout)
+
+    def test_https_hardening_is_off_by_default(self):
+        # Local Compose serves plain http://localhost, where secure-only cookies would break login.
+        result = self.load_settings("SESSION_COOKIE_SECURE", DJANGO_HTTPS=None)
+        self.assertNotEqual(result.returncode, 0)  # Not set at all, so Django's default (False) applies.
+        self.assertIn("cannot import name 'SESSION_COOKIE_SECURE'", result.stderr)
+
+    def test_invalid_https_value_is_rejected(self):
+        result = self.load_settings(DJANGO_HTTPS="yes")
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("DJANGO_HTTPS must be True or False", result.stderr)
 
     def test_debug_defaults_to_false(self):
         result = self.load_settings()

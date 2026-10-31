@@ -1,7 +1,8 @@
 """Spatial queries for the API. All geometry work runs in PostGIS, not Python."""
 import json
 
-from django.contrib.gis.db.models.functions import AsGeoJSON, Distance
+from django.contrib.gis.db.models import LineStringField
+from django.contrib.gis.db.models.functions import AsGeoJSON, Distance, GeoFunc
 from django.contrib.gis.geos import Point
 from django.contrib.gis.measure import D
 from django.db.models import Count, Subquery
@@ -25,9 +26,21 @@ def spaces_within(queryset, point, radius_m):
     return with_distance(queryset, point).filter(distance__lte=D(m=radius_m))
 
 
+class MakeLine(GeoFunc):
+    """ST_MakeLine(a, b): the straight line between two points of the same row."""
+
+    function = "ST_MakeLine"
+    geom_param_pos = (0, 1)
+    output_field = LineStringField(srid=4326)
+
+
 def nearest_space(queryset, point):
-    """The single closest study space (SQL LIMIT 1), or None if nothing matches."""
-    return with_distance(queryset, point).first()
+    """
+    The single closest study space (SQL LIMIT 1), or None if nothing matches.
+    PostGIS also returns the line from the search point to it as GeoJSON (line_geojson).
+    """
+    line = AsGeoJSON(MakeLine(point, "location"), precision=6)
+    return with_distance(queryset, point).annotate(line_geojson=line).first()
 
 
 def area_coverage():

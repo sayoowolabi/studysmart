@@ -79,9 +79,9 @@ These are covered by tests (see [testing.md](testing.md)). `manage.py check --de
 | Warning | Meaning | Status |
 | --- | --- | --- |
 | `security.W018` | `DEBUG` is on | From the local `.env` only; disappears with `DJANGO_DEBUG=False` |
-| `security.W004`, `W008`, `W012`, `W016` | No HSTS, no HTTPS redirect, session and CSRF cookies not secure-only | These settings require HTTPS, which the local `http://localhost` setup does not have. They must be enabled in production |
+| `security.W004`, `W008`, `W012`, `W016` | No HSTS, no HTTPS redirect, session and CSRF cookies not secure-only | These settings require HTTPS, which the local `http://localhost` setup does not have. `DJANGO_HTTPS=True` enables them all |
 
-No other warnings are reported.
+No other warnings are reported. With `DJANGO_DEBUG=False` and `DJANGO_HTTPS=True`, `check --deploy` reports **no issues** (tested). HSTS preload (`security.W021`) is deliberately silenced: it adds the domain to a list built into browsers, which is hard to undo, so the domain owner should opt in.
 
 ## Production and cloud deployment
 
@@ -90,7 +90,7 @@ The local setup is deliberately not production-ready. Deploying StudySmart publi
 1. **Database:** create a managed PostgreSQL 16+ instance, enable the `postgis` extension, and create a **restricted application role** that owns only the StudySmart schema (not a superuser). Enable automated backups.
 2. **Application server:** replace `runserver` with a WSGI server such as Gunicorn (one new dependency) behind the platform's HTTPS load balancer or Nginx.
 3. **Static files:** set `STATIC_ROOT`, run `collectstatic` during the build, and serve the files with Nginx, a CDN or WhiteNoise.
-4. **HTTPS and Django settings:** `DJANGO_DEBUG=False`; set `ALLOWED_HOSTS` and `CSRF_TRUSTED_ORIGINS` to the public domain; enable `SECURE_SSL_REDIRECT`, `SESSION_COOKIE_SECURE`, `CSRF_COOKIE_SECURE` and `SECURE_HSTS_SECONDS`, which clears the four `check --deploy` warnings. Behind a proxy, also set `SECURE_PROXY_SSL_HEADER`.
+4. **HTTPS and Django settings:** `DJANGO_DEBUG=False`, `DJANGO_ALLOWED_HOSTS` set to the public domain, and `DJANGO_HTTPS=True`. That one setting turns on the HTTPS redirect, HSTS, secure-only cookies, `CSRF_TRUSTED_ORIGINS` for the allowed hosts and `SECURE_PROXY_SSL_HEADER` for a proxy that sets `X-Forwarded-Proto`.
 5. **Secrets:** store them in the platform's secret manager instead of a `.env` file.
 6. **Release process:** build the image in CI, run `migrate` as a one-off release step, run the imports once, and promote the image only when CI is green.
 7. **Operations:** do not expose pgAdmin publicly; add logging and monitoring, and consider rate limiting and pagination for the public API.

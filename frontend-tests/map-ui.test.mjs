@@ -191,6 +191,7 @@ const cards = () => evaluate(`[...document.querySelectorAll(".result-card")].map
     number: card.querySelector(".result-number").textContent,
     name: card.querySelector(".result-title span:last-child").textContent,
     active: card.getAttribute("aria-current") === "true",
+    hasFacilities: !!card.querySelector(".facility-list"),
     yes: card.querySelectorAll(".facility--yes").length,
     no: card.querySelectorAll(".facility:not(.facility--yes):not(.facility--unknown)").length,
     unknownText: card.querySelector(".facility--unknown")?.textContent ?? "",
@@ -277,7 +278,8 @@ async function screenshot(name) {
 }
 
 function facilityCounts(space) {
-    const fields = ["indoor_seating", "outdoor_seating", "has_wifi", "has_outlets", "laptop_allowed"];
+    // The facilities the page displays (FACILITY_LABELS in markers.js).
+    const fields = ["indoor_seating", "outdoor_seating", "has_wifi"];
     return {
         yes: fields.filter((field) => space[field] === true).length,
         no: fields.filter((field) => space[field] === false).length,
@@ -332,9 +334,13 @@ async function run() {
         && await evaluate(`!!document.querySelector('.leaflet-marker-icon[title^="Starting point"]')`));
 
     // Facility summaries: confirmed, confirmed absent and unknown, exactly as in the API.
+    // A library with no known facility shows no facility list at all.
     check("card facility chips match true/false/unknown in the API", tcdCards.every((card, i) => {
         const expected = facilityCounts(nearbyTcd[i]);
-        const unknownText = expected.unknown === 5 ? "Facilities not recorded"
+        if (nearbyTcd[i].space_type === "library" && expected.unknown === 3) {
+            return !card.hasFacilities;
+        }
+        const unknownText = expected.unknown === 3 ? "Facilities not recorded"
             : expected.unknown === 0 ? "" : `${expected.unknown} not recorded`;
         return card.yes === expected.yes && card.no === expected.no && card.unknownText === unknownText;
     }));
@@ -374,15 +380,43 @@ async function run() {
     await setChecked("facility-indoor_seating", true);
     await waitFor(searchDone);
     await sleep(300);
-    const seatedApi = await api(`/api/spaces/nearby/?lat=${TCD.lat}&lng=${TCD.lng}&radius=1000&indoor_seating=true`);
+    const seatedApi = await api(`/api/spaces/nearby/?lat=${TCD.lat}&lng=${TCD.lng}&radius=1000&indoor_seating=true&facilities_apply_to=cafe`);
     const seatedCards = await cards();
-    check("facility filter re-runs the search and matches the API", seatedCards.length === Math.min(10, seatedApi.length)
+    check("café filter re-runs the search and matches the API", seatedCards.length === Math.min(10, seatedApi.length)
         && seatedCards.every((card, i) => card.id === seatedApi[i].id));
+
+    // A larger result size lists more of the same API results; the café filter keeps every library.
+    await setChecked("result-size-50", true);
+    await waitFor(searchDone);
+    await sleep(300);
+    const seatedCards50 = await cards();
+    const librariesNearTcd = nearbyTcd.filter((space) => space.space_type === "library").map((space) => space.id);
+    check("50 results shown, matching the API, with every nearby library kept", seatedCards50.length === Math.min(50, seatedApi.length)
+        && seatedCards50.every((card, i) => card.id === seatedApi[i].id)
+        && librariesNearTcd.length > 0 && librariesNearTcd.every((id) => seatedCards50.some((card) => card.id === id))
+        && (await summary()).startsWith(`Showing ${seatedCards50.length} of ${seatedApi.length}`), await summary());
+
+    // Libraries record no facilities, so their cards and popups show none rather than "Unknown".
+    await setChecked("facility-indoor_seating", false);
+    await waitFor(searchDone);
+    await setChecked("type-cafe", false);
+    await waitFor(searchDone);
+    await sleep(300);
+    const libraryCards = await cards();
+    await evaluate(`document.querySelector(".result-card")?.click()`);
+    await sleep(600);
+    check("library cards and popups show no facility list", libraryCards.length > 0
+        && libraryCards.every((card) => !card.hasFacilities)
+        && await evaluate(`!!document.querySelector(".leaflet-popup h2") && !document.querySelector(".leaflet-popup dl")`),
+        `${libraryCards.length} library cards`);
+    await evaluate(`document.querySelector(".leaflet-popup-close-button")?.click()`);
+
     await setChecked("radius-5000", true);
     await waitFor(summaryIncludes("within 5.0 km"));
     await click("reset-filters");
     await waitFor(summaryStartsWith(`Showing 10 of ${nearbyTcd.length}`));
-    check("reset restores 1 km, both types and no facilities", await evaluate(`document.getElementById("radius-1000").checked
+    check("reset restores 1 km, 10 results, both types and no facilities", await evaluate(`document.getElementById("radius-1000").checked
+        && document.getElementById("result-size-10").checked
         && !document.querySelector('input[name="facility"]:checked')`) && await text("filter-summary") === "1.0 km · All types");
 
     // UCD: coverage note, empty state, nearest fallback and a wider radius.
@@ -394,7 +428,9 @@ async function run() {
     await waitFor(summaryIncludes("nearest match is"));
     const nearestUcd = await api(`/api/spaces/nearest/?lat=${UCD.lat}&lng=${UCD.lng}`);
     const nearestCards = await cards();
-    check("show nearest match uses the nearest API", nearestCards.length === 1 && nearestCards[0].id === nearestUcd.id);
+    check("show nearest match uses the nearest API and draws its PostGIS line", nearestCards.length === 1
+        && nearestCards[0].id === nearestUcd.id && nearestUcd.line?.type === "LineString"
+        && await evaluate(`document.querySelectorAll("path.nearest-line").length === 1`));
     await click("widen-radius");
     await waitFor(summaryStartsWith("Showing"));
     const ucd2km = await api(`/api/spaces/nearby/?lat=${UCD.lat}&lng=${UCD.lng}&radius=2000`);
@@ -509,6 +545,16 @@ async function run() {
         }
         await screenshot(name);
     }
+
+    // About page, still at phone width: reached from the header and links back to the map.
+    await evaluate(`document.querySelector('.app-nav a').click()`);
+    await waitFor(`document.querySelector("h1")?.textContent === "About StudySmart"`);
+    check("phone: header link opens the About page with no sideways scrolling",
+        await evaluate("location.pathname === '/about/' && document.documentElement.scrollWidth <= innerWidth"));
+    await screenshot("about-phone");
+    await evaluate(`document.querySelector('.app-nav a').click()`);
+    await waitFor(`document.getElementById("results-summary")?.textContent.includes("match your filters")`);
+    check("About page links back to the map", await evaluate("location.pathname === '/'"));
 
     check("no JavaScript errors outside the deliberate API failure", consoleErrors.length === 0, consoleErrors.join(" | ").slice(0, 300));
 }

@@ -105,7 +105,7 @@ API URLs reach the JavaScript through `data-` attributes rendered with `{% url %
 | [models.py](../spaces/models.py) | `StudySpace` and `AdministrativeArea`, sharing an abstract `SourceRecord` with provenance fields; constraints (see [database.md](database.md)) |
 | [validators.py](../spaces/validators.py) | Geometry validation used by the API, the admin and the imports |
 | [serializers.py](../spaces/serializers.py) | API fields (`latitude`/`longitude` mapped to a PostGIS point), write validation through the model's `full_clean()`, protection of imported records, search-parameter validation |
-| [views.py](../spaces/views.py) | Map page; `StudySpaceViewSet` (CRUD plus `nearby` and `nearest`); area views; query-string filters |
+| [views.py](../spaces/views.py) | Map and About pages; `StudySpaceViewSet` (CRUD plus `nearby` and `nearest`); area views; query-string filters |
 | [spatial.py](../spaces/spatial.py) | Every spatial query: radius, nearest, coverage counts and boundary GeoJSON |
 | [universities.py](../spaces/universities.py) | Campus starting points with their OpenStreetMap element IDs |
 | [admin.py](../spaces/admin.py) | Admin with map widgets, facility-correction rules and read-only provenance |

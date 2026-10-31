@@ -1,5 +1,6 @@
 """JSON representation and validation of study spaces for the REST API."""
 import copy
+import json
 import math
 
 from django.contrib.gis.geos import Point
@@ -87,6 +88,19 @@ class StudySpaceDistanceSerializer(StudySpaceSerializer):
 
     def get_distance_m(self, space):
         return round(space.distance.m, 1)
+
+
+class StudySpaceNearestSerializer(StudySpaceDistanceSerializer):
+    """The nearest study space plus the PostGIS line from the search point to it."""
+
+    line = serializers.SerializerMethodField()
+
+    class Meta(StudySpaceDistanceSerializer.Meta):
+        fields = [*StudySpaceDistanceSerializer.Meta.fields, "line"]
+
+    def get_line(self, space):
+        # A GeoJSON LineString: [[longitude, latitude] of the search point, [… of the space]].
+        return json.loads(space.line_geojson)
 
 
 MAX_SEARCH_RADIUS_M = 10_000

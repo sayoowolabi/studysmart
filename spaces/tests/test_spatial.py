@@ -143,6 +143,13 @@ class NearestTests(APITestCase):
         self.assertEqual(response.data["name"], "Unknown-Seat Cafe")
         self.assertAlmostEqual(response.data["distance_m"], 556, delta=1)
 
+    def test_nearest_includes_the_postgis_line_from_the_search_point(self):
+        line = self.client.get(search(NEAREST_URL)).data["line"]
+        self.assertEqual(line["type"], "LineString")
+        # GeoJSON order is [longitude, latitude]: from the search point to the nearest space,
+        # rounded to 6 decimal places (about 0.1 m).
+        self.assertEqual(line["coordinates"], [[ORIGIN_LNG, ORIGIN_LAT], [ORIGIN_LNG, round(ORIGIN_LAT + 0.005, 6)]])
+
     def test_filters_apply_before_choosing_nearest(self):
         response = self.client.get(search(NEAREST_URL, indoor_seating="true"))
         self.assertEqual(response.data["name"], "Seated Cafe")

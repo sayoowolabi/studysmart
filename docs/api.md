@@ -1,6 +1,6 @@
 # REST API
 
-The API is built with Django REST Framework. All examples below are real responses from the running application with the committed data (captured on 2026-10-30). Long lists are shortened, as marked.
+The API is built with Django REST Framework. 
 
 - **Base URL (local):** `http://localhost:8000`
 - **Format:** JSON. Opening an endpoint in a browser shows DRF's browsable API; append `?format=json` or `.json` (for example `/api/spaces.json`) to force JSON.
@@ -98,8 +98,9 @@ Lists all study spaces, ordered by name. Not paginated.
 | --- | --- | --- |
 | `type` | `library`, `cafe` | Only that type |
 | `indoor_seating`, `outdoor_seating`, `has_wifi`, `has_outlets`, `laptop_allowed` | `true`, `false`, `unknown` (case-insensitive) | `true` matches only confirmed values; `unknown` matches only unknown |
+| `facilities_apply_to` | `library`, `cafe` | Applies the facility filters to that type only; other types are returned whatever their facilities. Without it, facility filters apply to every type. No effect without a facility filter |
 
-Filters combine with AND. Example: `GET /api/spaces/?type=cafe&indoor_seating=true` returns the 91 cafés with confirmed indoor seating.
+Filters combine with AND. The map page sends `facilities_apply_to=cafe`, so its café filters never remove libraries: `GET /api/spaces/?indoor_seating=true&facilities_apply_to=cafe` returns the cafés with confirmed indoor seating plus every library. Example: `GET /api/spaces/?type=cafe&indoor_seating=true` returns the 91 cafés with confirmed indoor seating.
 
 ### GET /api/spaces/{id}/
 
@@ -147,7 +148,7 @@ No matches returns `200 []`.
 
 ### GET /api/spaces/nearest/
 
-The single closest study space matching the filters, with no distance limit. PostGIS: `ST_DistanceSphere` with `LIMIT 1`. Parameters are `lat` and `lng` (required, as above) and the optional `type` and facility filters. Filters are applied before the nearest is chosen.
+The single closest study space matching the filters, with no distance limit. PostGIS: `ST_DistanceSphere` with `LIMIT 1`. Parameters are `lat` and `lng` (required, as above) and the optional `type` and facility filters. Filters are applied before the nearest is chosen. `line` is the GeoJSON line from the search point to the match, built by PostGIS (`ST_MakeLine`) in the same query; the map draws it.
 
 `GET /api/spaces/nearest/?lat=53.34371&lng=-6.25443&type=library`:
 
@@ -161,7 +162,8 @@ The single closest study space matching the filters, with no distance limit. Pos
   "address": "138-144 Pearse Street, D02HE37",
   "indoor_seating": null,
   "…": "other study-space fields",
-  "distance_m": 611.3
+  "distance_m": 611.3,
+  "line": {"type": "LineString", "coordinates": [[-6.25443, 53.34371], [-6.24528, 53.343091]]}
 }
 ```
 

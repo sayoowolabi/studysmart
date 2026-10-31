@@ -11,7 +11,7 @@ from rest_framework.views import APIView
 from .models import FACILITY_FIELDS, StudySpace
 from .serializers import (
     NearbyQuerySerializer, PointQuerySerializer, StudySpaceDistanceSerializer,
-    StudySpaceSerializer,
+    StudySpaceNearestSerializer, StudySpaceSerializer,
 )
 from .spatial import (
     area_boundaries, area_coverage, nearest_space, search_point, spaces_within,
@@ -25,18 +25,21 @@ FACILITY_FILTER_VALUES = {"true": True, "false": False, "unknown": None}
 # Search radii offered on the map page (metres); tests check they are within the API's limit.
 RADIUS_CHOICES_M = (500, 1000, 2000, 5000)
 
-# Facility filters offered on the map page, in display order.
+# How many nearest results the map page lists; the first is selected by default.
+RESULT_SIZE_CHOICES = (10, 25, 50)
+
+# Facility filters offered on the map page, in display order. Power outlets and laptop
+# permission remain API filters but are not offered here: almost no source records them.
 MAP_FACILITY_FILTERS = (
     ("indoor_seating", "Indoor seating"),
     ("has_wifi", "Wi-Fi"),
-    ("has_outlets", "Power outlets"),
 )
 
 
 def confirmed_facility_counts():
-    """Records confirming each map facility (value true), or None if the database is unavailable."""
+    """Cafés confirming each map facility (value true), or None if the database is unavailable."""
     try:
-        return StudySpace.objects.aggregate(**{
+        return StudySpace.objects.filter(space_type=StudySpace.SpaceType.CAFE).aggregate(**{
             field: Count("pk", filter=Q(**{field: True})) for field, _ in MAP_FACILITY_FILTERS
         })
     except DatabaseError:
@@ -55,6 +58,15 @@ def home(request):
         "facility_filters": facility_filters,
         "campuses": CAMPUSES,
         "radius_choices": RADIUS_CHOICES_M,
+        "result_size_choices": RESULT_SIZE_CHOICES,
+    })
+
+
+def about(request):
+    """A short page explaining what StudySmart is for and how to use the map."""
+    return render(request, "spaces/about.html", {
+        "radius_choices": RADIUS_CHOICES_M,
+        "result_size_choices": RESULT_SIZE_CHOICES,
     })
 
 
@@ -67,14 +79,25 @@ class ImportedRecordConflict(APIException):
     default_code = "imported_record"
 
 
-def filter_study_spaces(queryset, params):
-    """Apply ?type= and tri-state facility filters, rejecting unrecognised values."""
-    space_type = params.get("type")
-    if space_type is not None:
-        if space_type not in StudySpace.SpaceType.values:
-            raise ValidationError({"type": [f"Use one of: {', '.join(StudySpace.SpaceType.values)}."]})
-        queryset = queryset.filter(space_type=space_type)
+def valid_space_type(params, name):
+    value = params.get(name)
+    if value is not None and value not in StudySpace.SpaceType.values:
+        raise ValidationError({name: [f"Use one of: {', '.join(StudySpace.SpaceType.values)}."]})
+    return value
 
+
+def filter_study_spaces(queryset, params):
+    """
+    Apply ?type= and tri-state facility filters, rejecting unrecognised values.
+    ?facilities_apply_to=<type> limits the facility filters to that type; other types
+    are returned whatever their facilities (the map page uses this for cafés).
+    """
+    space_type = valid_space_type(params, "type")
+    if space_type is not None:
+        queryset = queryset.filter(space_type=space_type)
+    facilities_apply_to = valid_space_type(params, "facilities_apply_to")
+
+    facility_filter = Q()
     for field in FACILITY_FIELDS:
         value = params.get(field)
         if value is None:
@@ -83,10 +106,14 @@ def filter_study_spaces(queryset, params):
             raise ValidationError({field: ["Use true, false or unknown."]})
         expected = FACILITY_FILTER_VALUES[value.lower()]
         if expected is None:
-            queryset = queryset.filter(**{f"{field}__isnull": True})
+            facility_filter &= Q(**{f"{field}__isnull": True})
         else:
-            queryset = queryset.filter(**{field: expected})
-    return queryset
+            facility_filter &= Q(**{field: expected})
+
+    # An empty Q() would turn "filter OR other types" into "other types only", so skip it.
+    if facility_filter and facilities_apply_to is not None:
+        facility_filter |= ~Q(space_type=facilities_apply_to)
+    return queryset.filter(facility_filter)
 
 
 class StudySpaceViewSet(viewsets.ModelViewSet):
@@ -127,7 +154,7 @@ class StudySpaceViewSet(viewsets.ModelViewSet):
         space = nearest_space(self.get_queryset(), search_point(query["lat"], query["lng"]))
         if space is None:
             raise NotFound("No study space matches these filters.")
-        return Response(StudySpaceDistanceSerializer(space).data)
+        return Response(StudySpaceNearestSerializer(space).data)
 
 
 class AreaCoverageView(APIView):
