@@ -1,54 +1,10 @@
-# StudySmart data sources and import decisions (Issue #2)
+# Data sources and import decisions
 
 ## Scope and schema
 
 Initial coverage is the Dublin City Council (DCC) administrative area. The café download uses a broader bounding box; PostGIS `ST_Covers` (GeoDjango `boundary__covers`) tests each representative point against the complete imported DCC area set. Points on area boundaries are included. Unknown-seat cafés inside the study area are retained.
 
-```mermaid
-erDiagram
-    StudySpace {
-        bigint id PK
-        string name
-        string space_type "library or cafe"
-        Point location "EPSG:4326; spatial index"
-        string location_method
-        text address
-        text description
-        boolean indoor_seating "nullable"
-        boolean outdoor_seating "nullable"
-        boolean has_wifi "nullable"
-        boolean has_outlets "nullable"
-        boolean laptop_allowed "nullable"
-        boolean facility_import_locked
-        text facility_verification_notes
-        datetime facility_verified_at
-        string source_dataset "unique together with source_id"
-        string source_id
-        string source_kind
-        string source_url
-        string source_licence
-        datetime source_retrieved_at
-        int source_srid
-        json source_attributes
-        datetime imported_at
-    }
-    AdministrativeArea {
-        bigint id PK
-        string name
-        MultiPolygon boundary "EPSG:4326; spatial index"
-        string source_dataset "unique together with source_id"
-        string source_id
-        string source_kind
-        string source_url
-        string source_licence
-        datetime source_retrieved_at
-        int source_srid
-        json source_attributes
-        datetime imported_at
-    }
-```
-
-The Python `SourceRecord` class is abstract: it shares provenance fields without creating a third database table. No area foreign key or stored area counts are needed; later issues can calculate containment/counts in PostGIS.
+The database schema, geometry types, indexes and import pipeline are documented in [database.md](database.md).
 
 ## Sources and licensing
 
@@ -57,6 +13,7 @@ The Python `SourceRecord` class is abstract: it shares provenance fields without
 | Libraries | [Libraries DCC](https://data.smartdublin.ie/dataset/dublin-city-libraries), CSV resource `73b280a0-6938-4599-9fac-2b8a370ed7fd`; 24 named library/service records in the downloaded snapshot | Latitude/Longitude columns interpreted as EPSG:4326 and checked against Dublin boundaries; the CSV does not state a datum. Publisher reports Creative Commons Attribution (`cc-by`) without a version |
 | Administrative areas | [Administrative Areas DCC](https://data.smartdublin.ie/dataset/administrative-areas-dcc), GeoJSON resource `13352b23-cc61-495a-9dc7-69416120e04d`; five committee areas | File explicitly declares EPSG:2157 (ITM), including Z ordinates; publisher reports `cc-by` without a version |
 | Cafés | OpenStreetMap contributors, retrieved through the [Britain/Ireland Overpass instance](https://overpass.atownsend.org.uk/api/interpreter); `amenity=cafe` nodes, ways and relations | EPSG:4326; [Open Database Licence 1.0](https://www.openstreetmap.org/copyright) |
+| University campus starting points | OpenStreetMap campus elements, looked up through Nominatim and Overpass on 2026-10-29; each element ID is recorded in [spaces/universities.py](../spaces/universities.py). Campuses are search origins only, not study-space records | EPSG:4326; Open Database Licence 1.0 |
 
 Attribute DCC datasets to Dublin City Council / Smart Dublin and retain source links. Attribute OSM records to **© OpenStreetMap contributors** and retain the ODbL link. Preserve these per-source terms when exporting records; consult the ODbL terms before redistributing a combined database.
 
@@ -161,7 +118,7 @@ Confirmed indoor seating uses the exact ORM condition:
 StudySpace.objects.filter(space_type="cafe", indoor_seating=True)
 ```
 
-The full café queryset still includes false/unknown seating. Outdoor seating does not qualify a café for an indoor-seat filter. No public API or mapping UI is added in Issue #2.
+The full café queryset still includes false/unknown seating. Outdoor seating does not qualify a café for an indoor-seat filter. The API's `indoor_seating=true` filter and the map's "Indoor seating" filter use the same condition.
 
 ## Importing and administrator corrections
 
@@ -185,12 +142,4 @@ This is intentionally a group-level lock, not a per-field history system. Source
 
 ## Testing
 
-```powershell
-docker compose exec web /usr/local/bin/python manage.py check --database default
-docker compose exec web /usr/local/bin/python manage.py makemigrations --check --dry-run
-docker compose exec web /usr/local/bin/python manage.py test spaces
-```
-
-Tests use temporary manifests/files and a separate PostGIS test database. They cover both categories, tri-state facilities, indoor-seat filtering, source identity constraints, repeat and changed imports, source removals, manual protection, permissions, malformed inputs, non-finite/swapped coordinates, CRS transformation, Z normalisation and explicit geometry repair. No test depends on a live Overpass endpoint.
-
-See the Issue #2 verification section in the README for final local results.
+Import and facility-mapping tests use temporary manifests and synthetic fixtures with a separate PostGIS test database, and make no network calls. They cover repeat and changed imports, source removals, manual protection, malformed inputs, non-finite and swapped coordinates, CRS transformation, Z removal and explicit geometry repair. See [testing.md](testing.md) for the full test suite and verified results.
