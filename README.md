@@ -30,16 +30,18 @@ It is an individual project for the Advanced Web Mapping / Location-Based Servic
 
 - Interactive Leaflet map of **24 libraries** (Dublin City Council open data) and **633 cafés** (OpenStreetMap) in the Dublin City Council area. Libraries and cafés have different marker shapes and colours.
 - Three ways to choose a starting point: a **university campus** (eight campuses, coordinates taken from OpenStreetMap), **"Use my location"** (browser geolocation) or **"Pick on map"** (tap a point or a study-space marker).
-- Automatic search: the **10 nearest matches** appear as numbered result cards linked to numbered map markers. Clicking a card or a marker highlights both. The summary states the total, for example "Showing 10 of 250 nearby study spaces (within 1.0 km)".
-- Filters: distance (500 m – 5 km), type (libraries, cafés) and **confirmed facilities** (indoor seating, Wi-Fi, power outlets). A facility that no record confirms is shown disabled.
+- Automatic search: the **10 nearest matches** (or 25 or 50, chosen under *Results shown*) appear as numbered result cards linked to numbered map markers. Clicking a card or a marker highlights both. The summary states the total, for example "Showing 10 of 250 nearby study spaces (within 1.0 km)".
+- Filters: distance (500 m – 5 km), number of results, type (libraries, cafés) and, under *Filter cafés*, **confirmed café facilities** (indoor seating, Wi-Fi). Café filters never remove libraries. A facility that no café confirms is shown disabled.
 - Fallbacks when nothing is within the radius: *Search a wider area* and *Show nearest match*.
-- Popups with address, distance and all five facilities as Yes / No / **Unknown**, plus source and licence.
+- Popups with address, distance and indoor seating, outdoor seating and Wi-Fi as Yes / No / **Unknown**, plus source and licence. Libraries show no facility list, because the library dataset records none.
 - Optional administrative-area boundary overlay and a table of **library and café counts per area**.
+- An **About** page (linked from the header) explaining who StudySmart is for, how to use it and where its data comes from.
 - Responsive layout (desktop, tablet, phone), keyboard-accessible controls, loading, empty and error states, and clear geolocation error messages.
 
 **Spatial operations (PostGIS, via GeoDjango)**
 
 - Radius search (`ST_DistanceSphere`), nearest neighbour (distance order with `LIMIT 1`) and area containment with counts (`ST_CoveredBy`). The browser never calculates distances or containment.
+- Points (study spaces), polygons (area boundaries) and lines: the nearest search returns the line from the starting point to the match, built by PostGIS (`ST_MakeLine`) and drawn on the map.
 
 **Data management**
 
@@ -98,13 +100,13 @@ studysmart/              Django project: settings and root URLs
 spaces/                  Django app
   models.py              StudySpace and AdministrativeArea (PostGIS geometry)
   serializers.py         API representation and validation
-  views.py               Map page, REST API views and filters
+  views.py               Map and About pages, REST API views and filters
   spatial.py             All spatial queries (radius, nearest, containment, GeoJSON)
   universities.py        Campus starting points (OpenStreetMap-sourced)
   validators.py          Geometry validation shared by API, admin and imports
   admin.py               Django admin with map widgets
   importers/, management/commands/   Snapshot import commands
-  templates/, static/    Map page, JavaScript modules, CSS and font
+  templates/, static/    Map and About pages, JavaScript modules, CSS and font
   tests/                 Django tests and synthetic import fixtures
 data/                    Source snapshots, checksums manifest and stable identity maps
 frontend-tests/          Browser tests for the map page
@@ -178,6 +180,7 @@ Compose passes these from `.env` to the services; Django reads them from its env
 | `DJANGO_SECRET_KEY` | Long random Django signing secret (required) |
 | `DJANGO_DEBUG` | `True` or `False`; defaults to `False`. Use `True` locally: the development server serves the app's own JavaScript and CSS only in debug mode |
 | `DJANGO_ALLOWED_HOSTS` | Comma-separated host names; defaults to `localhost,127.0.0.1,[::1]` |
+| `DJANGO_HTTPS` | `True` only when served over HTTPS: turns on HTTPS redirect, HSTS and secure-only cookies. Defaults to `False` for local `http://localhost` |
 | `POSTGRES_DB`, `POSTGRES_USER`, `POSTGRES_PASSWORD` | Database name and account, created when the volume is first initialised |
 | `PGADMIN_DEFAULT_EMAIL`, `PGADMIN_DEFAULT_PASSWORD` | pgAdmin login |
 | `DOCKER_SUBNET` | Private subnet for the Compose network; defaults to `172.30.50.0/24` |
@@ -198,8 +201,8 @@ Single-quote values in `.env` that contain `$` or `#`. Do not share the generate
 
 | Suite | Size | Command |
 | --- | --- | --- |
-| Django tests (models, API, permissions, spatial queries, imports, settings, page) against a separate PostGIS test database | 129 tests | `docker compose exec web /usr/local/bin/python manage.py test spaces` |
-| Browser tests of the map page (needs Node 22+ and Chrome, Chromium or Edge; the app running with data imported) | 39 checks | `node frontend-tests/map-ui.test.mjs` |
+| Django tests (models, API, permissions, spatial queries, imports, settings, page) against a separate PostGIS test database | 138 tests | `docker compose exec web /usr/local/bin/python manage.py test spaces` |
+| Browser tests of the map page (needs Node 22+ and Chrome, Chromium or Edge; the app running with data imported) | 43 checks | `node frontend-tests/map-ui.test.mjs` |
 | System and migration checks | | `docker compose exec web /usr/local/bin/python manage.py check` and `… makemigrations --check --dry-run` |
 
 [GitHub Actions](.github/workflows/tests.yml) runs all of these on every push and pull request, using this repository's own `Dockerfile` and `docker-compose.yml` with throwaway test credentials. What each test covers, the verified results and how intermittent failures were diagnosed are in **[docs/testing.md](docs/testing.md)**.
@@ -238,6 +241,7 @@ The exact snapshots used are committed in `data/raw/` with SHA-256 checksums, re
 **Data**
 
 - Facility data is sparse and source-reported: of 633 cafés, 91 confirm indoor seating, 29 Wi-Fi and 1 power outlets; all library facilities are unknown. Seating values are not live availability.
+- Power outlets and laptop permission are stored and available through the API, but the map page does not show them: almost no source records them, so nearly every record would read "Unknown".
 - Coverage is the Dublin City Council area only. UCD Belfield is outside it, so the app shows a coverage note for that campus.
 - Records reflect the committed snapshots (libraries list reviewed 2021, OpenStreetMap retrieved October 2026), not a live feed. Some café positions are approximate centres of buildings (`location_method = osm_center`).
 - There is no "quiet environment" information in any source, so there is no such filter.

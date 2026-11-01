@@ -97,8 +97,21 @@ class FilterTests(APITestBase):
     def test_false_filter_matches_only_confirmed_absence(self):
         self.assertEqual(self.list_names("?indoor_seating=false"), ["Standing Cafe"])
 
+    def test_facility_filters_can_apply_to_cafes_only(self):
+        make_space(name="Unknown Library", space_type="library", indoor_seating=None)
+        # Libraries are kept whatever their facilities; cafés still need confirmed seating.
+        self.assertEqual(
+            self.list_names("?indoor_seating=true&facilities_apply_to=cafe"),
+            ["Seated Cafe", "Seated Library", "Unknown Library"],
+        )
+        # Without the parameter the filter applies to every type, as before.
+        self.assertEqual(self.list_names("?indoor_seating=true"), ["Seated Cafe", "Seated Library"])
+
+    def test_facilities_apply_to_without_facility_filters_changes_nothing(self):
+        self.assertEqual(self.list_names("?facilities_apply_to=cafe"), self.list_names(""))
+
     def test_invalid_filter_values_are_rejected(self):
-        for query in ("?type=university", "?indoor_seating=maybe"):
+        for query in ("?type=university", "?indoor_seating=maybe", "?facilities_apply_to=pub"):
             with self.subTest(query=query):
                 self.assertEqual(self.client.get(LIST_URL + query).status_code, 400)
 

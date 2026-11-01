@@ -25,6 +25,23 @@ ALLOWED_HOSTS = [
     if host.strip()
 ]
 
+# HTTPS hardening for a deployment served over HTTPS (behind Nginx or a load balancer that
+# sets X-Forwarded-Proto). Off by default because the local stack is plain http://localhost.
+https_value = os.environ.get("DJANGO_HTTPS", "False").strip().lower()
+if https_value not in {"true", "false"}:
+    raise ImproperlyConfigured("DJANGO_HTTPS must be True or False.")
+if https_value == "true":
+    SECURE_SSL_REDIRECT = True
+    SECURE_PROXY_SSL_HEADER = ("HTTP_X_FORWARDED_PROTO", "https")
+    SESSION_COOKIE_SECURE = True
+    CSRF_COOKIE_SECURE = True
+    SECURE_HSTS_SECONDS = 31_536_000  # One year.
+    SECURE_HSTS_INCLUDE_SUBDOMAINS = True
+    # HSTS preload puts the domain on a list built into browsers and is hard to undo, so it
+    # is left to the domain owner to opt into rather than enabled by default.
+    SILENCED_SYSTEM_CHECKS = ["security.W021"]
+    CSRF_TRUSTED_ORIGINS = [f"https://{host}" for host in ALLOWED_HOSTS]
+
 INSTALLED_APPS = [
     "django.contrib.admin",
     "django.contrib.auth",

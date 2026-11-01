@@ -2,7 +2,7 @@
  * Result cards in the left panel. Each card matches the numbered marker with the
  * same number. All record text is inserted with textContent, never parsed as HTML.
  */
-import {FACILITY_LABELS, SPACE_TYPES, appendElement, formatDistance} from "./markers.js";
+import {FACILITY_LABELS, SPACE_TYPES, appendElement, formatDistance, showsFacilities} from "./markers.js";
 
 const SKELETON_CARDS = 3;
 
@@ -64,7 +64,9 @@ function resultCard(space, number, onSelect) {
 
     const type = SPACE_TYPES[space.space_type].label;
     appendElement(body, "span", `${type} · ${formatDistance(space.distance_m)} away`).className = "result-meta";
-    body.append(facilitySummary(space));
+    if (showsFacilities(space)) {
+        body.append(facilitySummary(space));
+    }
     return item;
 }
 

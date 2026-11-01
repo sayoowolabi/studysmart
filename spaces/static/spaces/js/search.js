@@ -3,8 +3,8 @@
  *
  * 1. The user sets a starting point: a university campus, their current location,
  *    or a point picked on the map ("Pick on map" mode).
- * 2. Filters: radius, type and confirmed facilities.
- * 3. The 10 nearest matches appear as numbered cards and matching numbered markers.
+ * 2. Filters: radius, number of results, type and confirmed café facilities.
+ * 3. The nearest matches (10 by default) appear as numbered cards and matching numbered markers.
  * Every change re-runs the search automatically, always with the same filters:
  *   no starting point     - every matching space        GET /api/spaces/?filters
  *   starting point        - matches within the radius   GET /api/spaces/nearby/?lat&lng&radius&filters
@@ -16,7 +16,6 @@ import {formatDistance, setMarkerHighlight, showSpaces} from "./markers.js";
 import {clearResults, markActiveResult, renderLoading, renderResults} from "./results.js";
 import {clearStatus, setStatus} from "./status.js";
 
-const RESULT_LIMIT = 10;
 // Matches the CSS breakpoint where the panel becomes a separate scrolling column.
 const LARGE_SCREEN = window.matchMedia("(min-width: 992px)");
 const GEOLOCATION_OPTIONS = {enableHighAccuracy: false, timeout: 10000, maximumAge: 60000};
@@ -215,8 +214,12 @@ function updateFilterSummary() {
     const typeText = types.length === 2 ? "All types" : types.length === 1 ? (types[0] === "cafe" ? "Cafés" : "Libraries") : "No type";
     const facilities = document.querySelectorAll('input[name="facility"]:checked').length;
     const parts = [formatDistance(selectedRadius()), typeText];
+    const defaultSize = Number(document.querySelector('input[name="result-size"]').value);
+    if (selectedResultSize() !== defaultSize) {
+        parts.push(`${selectedResultSize()} results`);
+    }
     if (facilities > 0) {
-        parts.push(`${facilities} ${facilities === 1 ? "facility" : "facilities"}`);
+        parts.push(`${facilities} café ${facilities === 1 ? "filter" : "filters"}`);
     }
     element("filter-summary").textContent = parts.join(" · ");
 }
@@ -229,6 +232,10 @@ function selectedRadius() {
     return Number(document.querySelector('input[name="radius"]:checked').value);
 }
 
+function selectedResultSize() {
+    return Number(document.querySelector('input[name="result-size"]:checked').value);
+}
+
 /* Filters shared by every request, so they are always applied the same way. */
 function filterParams() {
     const params = new URLSearchParams();
@@ -236,8 +243,12 @@ function filterParams() {
     if (types.length === 1) {
         params.set("type", types[0]); // Both types selected means no type filter.
     }
-    for (const box of document.querySelectorAll('input[name="facility"]:checked')) {
+    const facilities = document.querySelectorAll('input[name="facility"]:checked');
+    for (const box of facilities) {
         params.set(box.value, "true"); // "true" matches only confirmed values, never unknown.
+    }
+    if (facilities.length > 0) {
+        params.set("facilities_apply_to", "cafe"); // The facility filters never remove libraries.
     }
     return params;
 }
@@ -315,7 +326,7 @@ async function showAllSpaces() {
     display(spaces);
     clearResults();
     showSummary(spaces.length > 0
-        ? `${spaces.length} study spaces match your filters. Choose a starting point to see the 10 nearest.`
+        ? `${spaces.length} study spaces match your filters. Choose a starting point to see the ${selectedResultSize()} nearest.`
         : noMatchesText("No study spaces match these filters."));
 }
 
@@ -327,7 +338,7 @@ async function searchNearby() {
     const spaces = await fetchLatest(`${state.urls.nearbyUrl}?${params}`);
     clearStatus();
 
-    const top = spaces.slice(0, RESULT_LIMIT); // Already ordered nearest first by PostGIS.
+    const top = spaces.slice(0, selectedResultSize()); // Already ordered nearest first by PostGIS.
     display(top, {numbered: true});
     renderResults(top, (space) => selectResult(space.id));
     // The circle only shows the chosen radius; PostGIS has already decided which spaces are inside it.
@@ -366,8 +377,9 @@ async function showNearestMatch() {
     clearStatus();
     display([space], {numbered: true});
     renderResults([space], (match) => selectResult(match.id));
-    L.polyline([state.origin.latlng, [space.latitude, space.longitude]], {
-        color: "#2b2a33", weight: 2, dashArray: "4 6", interactive: false,
+    // The line comes from PostGIS as GeoJSON ([longitude, latitude]); L.geoJSON reads that order.
+    L.geoJSON(space.line, {
+        style: {color: "#2b2a33", weight: 2, dashArray: "4 6", className: "nearest-line"}, interactive: false,
     }).addTo(state.overlay);
     fitTo([space]);
     selectResult(space.id, {fromMap: true});
@@ -375,10 +387,10 @@ async function showNearestMatch() {
         + `The nearest match is ${space.name}, ${formatDistance(space.distance_m)} away.`);
 }
 
-/* Explains empty results caused by facility filters, which exclude unknown values. */
+/* Explains empty results caused by café filters, which exclude unknown values. */
 function noMatchesText(text) {
     const facilityFiltered = document.querySelector('input[name="facility"]:checked');
-    return facilityFiltered ? `${text} Facility filters only include confirmed values.` : text;
+    return facilityFiltered ? `${text} Café filters only include confirmed values.` : text;
 }
 
 /* ---------- Showing results ---------- */

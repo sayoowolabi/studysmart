@@ -27,6 +27,11 @@
     <header class="app-header">
         <h1 class="brand"><span class="brand-mark" aria-hidden="true">S</span>StudySmart</h1>
         <span class="brand-tagline">Find a library or café to study in Dublin</span>
+        <nav class="app-nav" aria-label="Site">
+            <a class="nav-pill" href="{% url 'spaces:about' %}">
+                <svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3a9 9 0 1 1 0 18a9 9 0 0 1 0-18Z M12 11v5 M12 7.5v.01"/></svg>About
+            </a>
+        </nav>
     </header>
 
     <main class="app-layout">
@@ -80,6 +85,16 @@
                     </fieldset>
 
                     <fieldset class="filter-group">
+                        <legend class="filter-legend">Results shown</legend>
+                        <div class="chip-row">
+                            {% for size in result_size_choices %}
+                            <input type="radio" class="btn-check" name="result-size" value="{{ size }}" id="result-size-{{ size }}"{% if forloop.first %} checked{% endif %}>
+                            <label class="btn chip" for="result-size-{{ size }}">{{ size }}</label>
+                            {% endfor %}
+                        </div>
+                    </fieldset>
+
+                    <fieldset class="filter-group">
                         <legend class="filter-legend">Type</legend>
                         <div class="chip-row">
                             <input class="btn-check" type="checkbox" name="type" value="library" id="type-library" checked>
@@ -90,10 +105,10 @@
                     </fieldset>
 
                     <fieldset class="filter-group" aria-describedby="facility-help">
-                        <legend class="filter-legend">Confirmed facilities</legend>
+                        <legend class="filter-legend">Filter cafés</legend>
                         <div class="chip-row">
                             {% for facility in facility_filters %}
-                            {# Counts come from the database when the page loads; a facility nobody confirms is disabled. #}
+                            {# Café counts come from the database when the page loads; a facility no café confirms is disabled. #}
                             <input class="btn-check" type="checkbox" name="facility" value="{{ facility.field }}"
                                    id="facility-{{ facility.field }}"{% if facility.confirmed == 0 %} disabled{% endif %}>
                             <label class="btn chip" for="facility-{{ facility.field }}">
@@ -104,9 +119,8 @@
                             {% endfor %}
                         </div>
                         <p id="facility-help" class="filter-help">
-                            Only places whose source confirms a facility are shown; unknown is never treated as yes.
-                            Libraries' facilities are not yet recorded, so a facility filter hides them.
-                            Seating is not live availability.
+                            Only cafés whose source confirms a facility are shown; unknown is never treated as yes.
+                            These filters do not affect libraries. Seating is not live availability.
                         </p>
                     </fieldset>
 
@@ -119,7 +133,7 @@
             <section class="panel-results step" aria-labelledby="results-heading">
                 <h2 id="results-heading" class="step-title"><span class="step-number" aria-hidden="true">3</span>Nearby study spaces</h2>
                 <p id="results-summary" class="results-summary" role="status" aria-live="polite">
-                    Choose a starting point to see the 10 nearest study spaces.
+                    Choose a starting point to see the nearest study spaces.
                 </p>
                 <ol id="results-list" class="result-list"></ol>
                 <div id="results-actions" class="results-actions" hidden>

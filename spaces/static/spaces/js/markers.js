@@ -8,13 +8,25 @@ export const SPACE_TYPES = {
     cafe: {label: "Café", letter: "C"},
 };
 
+/*
+ * Facilities shown in popups and result cards. The API also returns has_outlets and
+ * laptop_allowed, but almost no source records them, so they are not displayed.
+ */
 export const FACILITY_LABELS = {
     indoor_seating: "Indoor seating",
     outdoor_seating: "Outdoor seating",
     has_wifi: "Wi-Fi",
-    has_outlets: "Power outlets",
-    laptop_allowed: "Laptops allowed",
 };
+
+/*
+ * The library dataset records no facilities, so a library's list would read "Unknown" for
+ * everything, even indoor seating. Libraries show facilities only once one is known
+ * (for example after an administrator verifies it); cafés always show them.
+ */
+export function showsFacilities(space) {
+    return space.space_type !== "library"
+        || Object.keys(FACILITY_LABELS).some((field) => space[field] !== null);
+}
 
 const SOURCE_KIND_LABELS = {
     official: "Official dataset",
@@ -138,18 +150,20 @@ function buildPopup(space) {
         appendElement(popup, "p", `Distance: ${formatDistance(space.distance_m)}`).className = "popup-distance";
     }
 
-    const facilities = appendElement(popup, "dl");
-    for (const [field, label] of Object.entries(FACILITY_LABELS)) {
-        appendElement(facilities, "dt", label);
-        const value = appendElement(facilities, "dd", facilityText(space[field]));
-        if (space[field] === null) {
-            value.className = "facility-unknown";
+    if (showsFacilities(space)) {
+        const facilities = appendElement(popup, "dl");
+        for (const [field, label] of Object.entries(FACILITY_LABELS)) {
+            appendElement(facilities, "dt", label);
+            const value = appendElement(facilities, "dd", facilityText(space[field]));
+            if (space[field] === null) {
+                value.className = "facility-unknown";
+            }
         }
+        appendElement(popup, "p", "Facilities are source-reported, not live availability.").className = "popup-note";
     }
 
     const source = SOURCE_KIND_LABELS[space.source_kind] || space.source_kind;
     const licence = space.source_licence ? ` (${space.source_licence})` : "";
-    appendElement(popup, "p", "Facilities are source-reported, not live availability.").className = "popup-note";
     appendElement(popup, "p", `Source: ${source}${licence}`).className = "popup-note";
     return popup;
 }

@@ -129,6 +129,7 @@ All spatial queries are in [spaces/spatial.py](../spaces/spatial.py):
 | --- | --- | --- |
 | Radius search | `annotate(distance=Distance("location", point)).filter(distance__lte=D(m=radius))`, ordered by distance | `ST_DistanceSphere` |
 | Nearest | The same distance annotation, ordered, `.first()` | `ST_DistanceSphere` with `LIMIT 1` |
+| Line to the nearest | `annotate(line_geojson=AsGeoJSON(MakeLine(point, "location")))` in the same query | `ST_MakeLine`, `ST_AsGeoJSON` |
 | Area counts | `filter(location__coveredby=Subquery(boundary))`, grouped by `space_type` | `ST_CoveredBy` |
 | Boundary GeoJSON | `annotate(geojson=AsGeoJSON("boundary", precision=5))` | `ST_AsGeoJSON` |
 
@@ -165,6 +166,8 @@ Running the same import twice reports every record as `unchanged`, which was ver
 | Verified by an administrator | Any value with `facility_import_locked = true`, notes and `facility_verified_at` | A correction through the admin or the API, with evidence notes; protected from later imports |
 
 The API filter `<facility>=true` matches only confirmed values, and `unknown` matches only `NULL`. The interface never displays unknown as yes or no.
+
+All five facilities are stored, imported and available through the API, but the map page shows only indoor seating, outdoor seating and Wi-Fi. Power outlets and laptop permission are almost never recorded (see below), so they are kept for the API and future data rather than shown as "Unknown" on nearly every record. For the same reason, library cards and popups show no facility list unless a library facility becomes known (for example through an administrator correction).
 
 Current data (2026-10-30):
 
