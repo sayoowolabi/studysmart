@@ -184,30 +184,6 @@ Verified from a fresh clone on 2026-10-30, and rebuilt from empty volumes behind
 
 **Stopping and restarting:** `docker compose stop` / `docker compose start`, or `docker compose down` / `docker compose up -d` to recreate the containers. Data lives in the named volume `studysmart_postgres_data` and survives both. **Never add `-v`** to `docker compose down` unless you intend to delete the database.
 
-### Assessment / demo
-
-The public map and every `GET` endpoint need no login. Creating, updating and deleting study spaces needs an administrator, which you create yourself:
-
-```powershell
-docker compose exec web python manage.py createsuperuser
-```
-
-Choose the username and password when prompted. No demo account or password is included in the repository, and real passwords must never be committed.
-
-Log in at [http://localhost:8000/admin/](http://localhost:8000/admin/). Create, update and delete can then be shown in two ways:
-
-| Operation | Django admin, [`/admin/spaces/studyspace/`](http://localhost:8000/admin/spaces/studyspace/) | Browsable API, [`/api/spaces/`](http://localhost:8000/api/spaces/) (same browser session) |
-| --- | --- | --- |
-| Create | *Add study space*: fill in the name and type, and click the map widget to place the point | Use the form at the bottom of the list page, with `latitude` and `longitude` |
-| Update | Open the record and change it | Open `/api/spaces/{id}/` and send a `PATCH` from the *Raw data* tab, for example `{"address": "New address"}` |
-| Delete | Open the record and choose *Delete* | Open `/api/spaces/{id}/` and use the *DELETE* button |
-
-Things to know for the demonstration:
-
-- **Use a record you created.** Imported records are protected because the next import would overwrite them: their source fields are read-only, and deleting one through the API returns `409 Conflict`. Their facilities can be corrected, with evidence notes.
-- **The map widget opens over France**, GeoDjango's default position. Zoom out and pan to Dublin before placing the point.
-- **The first requests after a start are slower** while each Gunicorn worker warms up, so open the pages once beforehand. The browsable list page contains all 657 records and takes a couple of seconds.
-
 ## Environment variables
 
 Compose passes these from `.env` to the services; Django reads them from its environment. `.env` is ignored by Git and excluded from the Docker image. `.env.example` contains placeholders only.
@@ -329,7 +305,29 @@ The work was planned as GitHub Issues and delivered one issue per feature branch
 | #15 Frontend redesign | Three-step search flow, result cards, responsive layout |
 | #8 Documentation and final verification | This documentation and the final checks |
 
-Continuous integration, a verified clean installation and the engineering decisions are recorded in [docs/testing.md](docs/testing.md), [docs/deployment.md](docs/deployment.md) and [docs/architecture.md](docs/architecture.md#design-decisions). Project conventions for contributors are in [AGENTS.md](AGENTS.md).
+Continuous integration, a verified clean installation and the engineering decisions are recorded in [docs/testing.md](docs/testing.md), [docs/deployment.md](docs/deployment.md) and [docs/architecture.md](docs/architecture.md#design-decisions). 
+
+#### AI Contribution
+AI coding agents were used in this project to assist the development of this project. For various tasks, I set the tasks and requirements, and the instructions file required my approval before substantial changes and before any commit, push or merge. I remain responsible for reviewing, understanding and being able to explain all of the submitted work.
+
+**Here is a list detailing the use of AI in this project:**
+
+OpenAI Codex
+
+- Datasets: provided a list of candidate datasets for the project.
+- Documentation: wrote the project documentation from my notes and the codebase. (api.md, architecture.md, data-sources.md, databases.md, deployment.md, testing.md, README.md)
+- Architecture diagram: helped create the architecture diagram.
+
+Claude Code
+
+- UI tests: created the automated browser tests for the map interface.
+- Importers (/importers): wrote the OpenStreetMap importer and part of the shared import code in common.py.
+- Management commands (/management/commands): helped write the commands that load the source data into the database.
+- Validators: wrote the validation rules for geometry.
+- Nginx and Gunicorn serving: Assisted setting up Nginx as a reverse proxy in front of Gunicorn, including static file serving and security headers, and updated the Docker and CI configuration to match.
+- Buffer and intersection queries: wrote the PostGIS query and the /api/areas/intersecting/ endpoint that find the area containing a search point and the areas within its radius
+- Area line on the map page: added the line under the search results that names the areas a search reaches.
+- Tests and documentation: wrote the tests for this work and updated the README and docs/ to match, including th
 
 ## Attribution
 
