@@ -58,7 +58,7 @@ It is an individual project for the Advanced Web Mapping / Location-Based Servic
 
 | Desktop | Phone |
 | --- | --- |
-| ![StudySmart on a desktop browser: search panel on the left, numbered results on the map](docs/screenshots/desktop.png) | ![StudySmart on a phone: controls, map and result cards stacked](docs/screenshots/phone.png) |
+| ![StudySmart on a desktop browser: search panel on the left, numbered results on the map](docs/screenshots/desktop-1.png) ![StudySmart on a desktop browser: search panel on the left, numbered results on the map](docs/screenshots/desktop-2.png) ![StudySmart on a desktop browser: search panel on the left, numbered results on the map](docs/screenshots/desktop-3.png) | ![StudySmart on a phone: controls, map and result cards stacked](docs/screenshots/mobile-1.png) ![StudySmart on a phone: controls, map and result cards stacked](docs/screenshots/mobile-2.png) ![StudySmart on a phone: controls, map and result cards stacked](docs/screenshots/mobile-3.png)|
 
 ## Technology stack
 
@@ -99,6 +99,11 @@ flowchart LR
 ```
 
 Nginx is the only way in: it serves the JavaScript, CSS and font itself and passes everything else to Gunicorn. The browser asks the REST API for study spaces; Django turns each search into one PostGIS query; results return as JSON and are drawn on the map. Details, a request sequence diagram and the main design decisions are in **[docs/architecture.md](docs/architecture.md)**. The database schema, geometry and import process are in **[docs/database.md](docs/database.md)**.
+
+### ERD
+**Created in PlantUML**
+
+<img width="483" height="1039" alt="image" src="https://github.com/user-attachments/assets/9d32f8df-d1c9-4a03-8420-09640478e512" />
 
 ## Repository structure
 
