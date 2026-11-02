@@ -92,7 +92,9 @@ One later failure has **no confirmed cause**. On 2026-11-02, "tablet: card click
 | 2026-10-29 | CI on `main` after merging, commit `4efc69c` | Passed |
 | 2026-10-30 | Clean installation from a fresh clone of `main` (`4efc69c`) | `check` and `pip check` clean; 129 tests passed in random order; 39 of 39 browser checks; see [deployment.md](deployment.md#clean-installation-verification) |
 | 2026-10-30 | Development environment | 129 tests passed; `makemigrations --check`: no changes |
-| 2026-11-02 | Stack rebuilt from empty volumes behind Nginx and Gunicorn, `DJANGO_DEBUG=False` | 154 tests passed in random order; 49 of 49 browser checks through Nginx, 8 runs in a row with real map tiles; `check`, `pip check` and `makemigrations --check` clean; imports repeated with everything `unchanged`; see [deployment.md](deployment.md#nginx-and-gunicorn-verification). The updated GitHub Actions workflow had not yet run |
+| 2026-11-02 | Stack rebuilt from empty volumes behind Nginx and Gunicorn, `DJANGO_DEBUG=False` | 154 tests passed in random order; 49 of 49 browser checks through Nginx, 8 runs in a row with real map tiles; `check`, `pip check` and `makemigrations --check` clean; imports repeated with everything `unchanged`; see [deployment.md](deployment.md#nginx-and-gunicorn-verification) |
+| 2026-11-02 | CI on `final-touches`, commit `334b6f9` | Passed, using the updated workflow through Nginx with `DEBUG` off |
+| 2026-11-02 | Fresh clone of `final-touches` (`def6d3f`) merged with `main` (`aa8da23`), following the README in a separate Compose project | 5 areas, 24 libraries and 633 cafés imported; 155 tests passed in random order; 50 of 50 browser checks with map tiles blocked; `check` and `makemigrations --check` clean; `check --deploy` warned only about the HTTPS settings |
 
 ## What is not automated
 
