@@ -233,8 +233,8 @@ Single-quote values in `.env` that contain `$` or `#`. Do not share the generate
 
 | Suite | Size | Command |
 | --- | --- | --- |
-| Django tests (models, API, permissions, spatial queries, imports, settings, page) against a separate PostGIS test database | 154 tests | `docker compose exec web /usr/local/bin/python manage.py test spaces` |
-| Browser tests of the map page (needs Node 22+ and Chrome, Chromium or Edge; the app running with data imported) | 49 checks | `node frontend-tests/map-ui.test.mjs` |
+| Django tests (models, API, permissions, spatial queries, imports, settings, page) against a separate PostGIS test database | 155 tests | `docker compose exec web /usr/local/bin/python manage.py test spaces` |
+| Browser tests of the map page (needs Node 22+ and Chrome, Chromium or Edge; the app running with data imported) | 50 checks | `node frontend-tests/map-ui.test.mjs` |
 | System and migration checks | | `docker compose exec web /usr/local/bin/python manage.py check` and `… makemigrations --check --dry-run` |
 
 [GitHub Actions](.github/workflows/tests.yml) runs all of these on every push and pull request, using this repository's own `Dockerfile` and `docker-compose.yml` with throwaway test credentials. What each test covers, the verified results and how intermittent failures were diagnosed are in **[docs/testing.md](docs/testing.md)**.
@@ -295,7 +295,7 @@ The exact snapshots used are committed in `data/raw/` with SHA-256 checksums, re
 | --- | --- |
 | The map page loads but the map is blank and `map.js` returns 404 | Nginx serves files that `collectstatic` copied to the `static_data` volume when `web` started. Check that both services are up with `docker compose ps`, and look for errors with `docker compose logs web nginx`. Run `docker compose restart web` to collect the files again. |
 | 502 Bad Gateway | Gunicorn is still starting or has stopped. Wait a few seconds, then check `docker compose logs web`. |
-| Map tiles show "Access blocked" | The browser is not sending a `Referer` header; the tile layer requests one with `referrerPolicy`. Hard-refresh (Ctrl+F5) to load the current `map.js`. |
+| Map tiles show "Access blocked" | The browser is not sending a `Referer` header. The main map requests one with `referrerPolicy`, and Nginx allows one on `/admin/` pages for the map widget. Hard-refresh (Ctrl+F5), because the browser may have cached the blocked tiles. |
 | Changes to code are not picked up | Gunicorn does not reload changed code, and changed JavaScript and CSS must be collected again: run `docker compose restart web`. Browsers may cache static files for up to a week, so hard-refresh (Ctrl+F5) as well. |
 | `Set DJANGO_SECRET_KEY …` or a similar error on start | `.env` is missing a value or still has a `change-me` placeholder. |
 | Port 8000 or 5050 is in use | Stop the other service, or change the host side of the port mapping. |
