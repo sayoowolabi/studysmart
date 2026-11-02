@@ -14,7 +14,6 @@ It is an individual project for the Advanced Web Mapping / Location-Based Servic
 - [Architecture](#architecture)
 - [Repository structure](#repository-structure)
 - [Quick start](#quick-start)
-  - [Assessment / demo](#assessment--demo)
 - [Environment variables](#environment-variables)
 - [Tests and continuous integration](#tests-and-continuous-integration)
 - [API](#api)
@@ -315,7 +314,7 @@ AI coding agents were used in this project to assist the development of this pro
 OpenAI Codex
 
 - Datasets: provided a list of candidate datasets for the project.
-- Documentation: wrote the project documentation from my notes and the codebase. (api.md, architecture.md, data-sources.md, databases.md, deployment.md, testing.md, README.md)
+- Documentation: wrote the project documentation from my notes and the codebase. (api.md, architecture.md, data-sources.md, database.md, deployment.md, testing.md, README.md)
 - Architecture diagram: helped create the architecture diagram.
 
 Claude Code
