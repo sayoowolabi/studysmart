@@ -1,3 +1,4 @@
+# AI assistance (Claude): added the CSV checks and the conversion of library rows into StudySpace records with stable IDs and unknown facilities.
 import csv
 
 from django.core.management.base import CommandError

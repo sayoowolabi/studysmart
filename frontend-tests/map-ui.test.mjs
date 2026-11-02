@@ -1,3 +1,4 @@
+// AI assistance (Claude): added the headless browser driver and the checks of search, filters, markers, layouts and error states.
 // Browser tests for the StudySmart map page.
 //
 // Drives a headless Chromium-based browser (Chrome, Chromium or Edge) through the
@@ -304,6 +305,9 @@ async function run() {
     const pageHeaders = (await fetch(`${BASE}/`)).headers;
     check("pages and static files send each security header once", [staticHeaders, pageHeaders].every((headers) => headers.get("x-frame-options") === "DENY"
         && headers.get("x-content-type-options") === "nosniff" && headers.get("referrer-policy") === "same-origin"));
+    // OSM blocks tiles requested without a Referer, and the admin's map widget cannot ask for one itself.
+    const adminPolicy = (await fetch(`${BASE}/admin/login/`)).headers.get("referrer-policy");
+    check("admin pages send only their origin to the tile server", adminPolicy === "strict-origin-when-cross-origin", adminPolicy ?? "no header");
 
     await connect();
     await send("Page.enable");
@@ -546,7 +550,10 @@ async function run() {
 
     await click("clear-location");
     await waitFor(summaryIncludes("match your filters"));
-    check("clear returns to all spaces", (await markers()).length === all.length && (await cards()).length === 0);
+    const clearedMarkers = (await markers()).length;
+    const clearedCards = (await cards()).length;
+    check("clear returns to all spaces", clearedMarkers === all.length && clearedCards === 0,
+        `${clearedMarkers} markers, API ${all.length}, ${clearedCards} cards; ${await summary()}`);
 
     // Responsive layouts.
     for (const [name, width, height, mobile] of [["desktop", 1366, 900, false], ["tablet", 768, 1024, true], ["phone", 390, 844, true]]) {

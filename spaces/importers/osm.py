@@ -1,3 +1,4 @@
+# AI assistance (Claude): added the mapping of OSM tags to true/false/unknown facilities, keeping conflicting, conditional and unsupported tags unknown.
 """Conservative OSM facility mappings; see docs/data-sources.md for semantics."""
 OUTDOOR_POSITIVE = {
     "yes", "parklet", "pedestrian_zone", "street", "sidewalk", "patio", "terrace",

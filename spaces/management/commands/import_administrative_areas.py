@@ -1,3 +1,4 @@
+# AI assistance (Claude): added the GeoJSON and CRS checks, Z removal, transformation to EPSG:4326 and the optional --repair-invalid boundary repair.
 import json
 import re
 

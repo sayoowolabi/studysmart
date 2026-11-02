@@ -2,6 +2,7 @@
 # Dockerfile and docker-compose.yml, so CI uses the same Python, GDAL/GEOS/PROJ
 # and PostGIS versions as local development; then runs the browser tests against
 # the running site with the source snapshots imported.
+# Made with assistance from Claude code
 name: Tests
 
 on:
