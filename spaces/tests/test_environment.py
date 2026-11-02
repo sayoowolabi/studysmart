@@ -2,13 +2,16 @@ import os
 import re
 import subprocess
 import sys
+import tempfile
 from pathlib import Path
 from unittest import mock
 
+from django.conf import settings
 from django.contrib.gis.gdal import SpatialReference
 from django.contrib.staticfiles import finders
 from django.templatetags.static import static
 from django.contrib.gis.geos import Point
+from django.core.management import call_command
 from django.db import DatabaseError, connection
 from django.test import SimpleTestCase, TestCase, override_settings
 from django.urls import reverse
@@ -305,3 +308,62 @@ class SettingsEnvironmentTests(SimpleTestCase):
         result = self.load_settings("ALLOWED_HOSTS", DJANGO_ALLOWED_HOSTS=" example.org, ,localhost ")
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertEqual(result.stdout.strip(), "['example.org', 'localhost']")
+
+
+class ProductionServingTests(SimpleTestCase):
+    """Nginx serves collected static files and proxies the rest to Gunicorn."""
+
+    @staticmethod
+    def project_file(name):
+        return (Path(settings.BASE_DIR) / name).read_text(encoding="utf-8")
+
+    def compose_service(self, name):
+        services = self.project_file("docker-compose.yml")
+        return re.search(rf"^  {name}:\n(.*?)(?=^  \w|^\w|\Z)", services, re.MULTILINE | re.DOTALL).group(1)
+
+    def test_static_root_is_the_directory_shared_with_nginx(self):
+        self.assertEqual(Path(settings.STATIC_ROOT), Path(settings.BASE_DIR) / "staticfiles")
+        self.assertRegex(self.compose_service("web"), r"static_data:/app/staticfiles\n")
+        self.assertRegex(self.compose_service("nginx"), r"static_data:/app/staticfiles:ro\n")
+
+    def test_collectstatic_gathers_app_admin_and_api_files(self):
+        with tempfile.TemporaryDirectory() as directory, override_settings(STATIC_ROOT=directory):
+            call_command("collectstatic", interactive=False, verbosity=0)
+            for name in ("spaces/js/map.js", "admin/css/base.css", "gis/js/OLMapWidget.js", "rest_framework/css/default.css"):
+                self.assertTrue((Path(directory) / name).is_file(), name)
+
+    def test_without_https_deployment_warnings_are_only_the_https_settings(self):
+        # A fixed strong key, so the result does not depend on the key in the local .env.
+        environment = {
+            **os.environ, "DJANGO_DEBUG": "False", "DJANGO_HTTPS": "False",
+            "DJANGO_SECRET_KEY": "test-only-deployment-check-key-" + "a1b2c3d4e5" * 4,
+        }
+        result = subprocess.run(
+            [sys.executable, "manage.py", "check", "--deploy"],
+            env=environment, capture_output=True, text=True, check=False,
+        )
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertEqual(
+            set(re.findall(r"security\.W\d+", result.stdout + result.stderr)),
+            {"security.W004", "security.W008", "security.W012", "security.W016"},
+        )
+
+    def test_only_nginx_publishes_the_site_and_web_runs_gunicorn(self):
+        web, nginx = self.compose_service("web"), self.compose_service("nginx")
+        self.assertNotIn("ports:", web)
+        self.assertIn("gunicorn studysmart.wsgi:application --bind 0.0.0.0:8000 --workers 3", web)
+        self.assertIn('"127.0.0.1:8000:80"', nginx)
+        self.assertRegex(nginx, r"image: nginx:\d+\.\d+\.\d+-alpine")
+        self.assertRegex(self.project_file("requirements.txt"), r"(?m)^gunicorn==\d+\.\d+\.\d+$")
+
+    def test_nginx_keeps_the_port_for_csrf_and_sends_each_security_header_once(self):
+        config = self.project_file("nginx/default.conf")
+        # $host drops the port, and Django's CSRF check would then refuse admin logins.
+        self.assertIn("proxy_set_header Host $http_host;", config)
+        for directive in ("server_tokens off;", "client_max_body_size", "X-Forwarded-For", "X-Forwarded-Proto"):
+            self.assertIn(directive, config)
+        for header in ("X-Content-Type-Options", "Referrer-Policy", "X-Frame-Options"):
+            self.assertIn(f"add_header {header} ", config)
+            self.assertIn(f"proxy_hide_header {header};", config)
+        # add_header in a location would silently drop the server-level security headers there.
+        self.assertEqual(len(re.findall(r"(?m)^\s*add_header ", config)), 3)

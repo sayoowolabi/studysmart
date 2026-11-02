@@ -16,7 +16,7 @@ The API is built with Django REST Framework.
 | `PATCH /api/spaces/{id}/` | Users with `spaces.change_studyspace` |
 | `DELETE /api/spaces/{id}/` | Users with `spaces.delete_studyspace` |
 
-Authentication uses Django sessions: log in at `/admin/`, then use the browsable API, which includes the CSRF token. Writes without a valid CSRF token are rejected. HTTP Basic authentication is disabled because the development server runs over plain HTTP. Superusers have all permissions.
+Authentication uses Django sessions: log in at `/admin/`, then use the browsable API, which includes the CSRF token. Writes without a valid CSRF token are rejected. HTTP Basic authentication is disabled because the local stack runs over plain HTTP. Superusers have all permissions.
 
 ## Endpoints
 

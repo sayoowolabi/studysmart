@@ -67,7 +67,8 @@ It is an individual project for the Advanced Web Mapping / Location-Based Servic
 | Backend | Python 3.12, Django 5.2 LTS with GeoDjango, Django REST Framework 3.18, Psycopg 3 |
 | Spatial libraries | GDAL, GEOS and PROJ (inside the Django container) |
 | Frontend | Django template, Leaflet 1.9.4, OpenStreetMap tiles, Bootstrap 5.3 (CSS), native JavaScript ES modules (no build step), self-hosted Nunito font |
-| Deployment | Docker Compose: Django, PostGIS and pgAdmin 4 services on a private network with named volumes |
+| Web serving | Nginx 1.30 (reverse proxy and static files) in front of Gunicorn 26 (WSGI server) |
+| Deployment | Docker Compose: Nginx, Django, PostGIS and pgAdmin 4 services on a private network with named volumes |
 | Quality | Django test runner against PostGIS, browser tests (Node 22 and headless Chrome/Edge, no npm packages), GitHub Actions |
 
 Exact dependency versions are pinned in [requirements.txt](requirements.txt), [docker-compose.yml](docker-compose.yml), [Dockerfile](Dockerfile) and the template's CDN links (with Subresource Integrity hashes).
@@ -80,18 +81,23 @@ flowchart LR
         UI["Map page<br/>Leaflet + ES modules"]
     end
     subgraph Docker["Docker Compose (private network)"]
-        Web["web: Django / GeoDjango<br/>template · REST API · admin"]
+        Nginx["nginx: reverse proxy<br/>static files · security headers"]
+        Web["web: Gunicorn + Django / GeoDjango<br/>template · REST API · admin"]
+        Static[("static_data<br/>named volume")]
         DB[("db: PostgreSQL + PostGIS<br/>named volume")]
         PGA["pgadmin"]
     end
-    UI -->|"HTTP / JSON"| Web
+    UI -->|"HTTP / JSON"| Nginx
+    Nginx -->|"proxied requests"| Web
+    Web -.->|"collectstatic"| Static
+    Static -.->|"/static/ (read-only)"| Nginx
     Web -->|"SQL with PostGIS functions"| DB
     PGA --> DB
     UI -.->|"map tiles"| OSM["OpenStreetMap tile server"]
     Snap["Source snapshots in data/raw"] -.->|"import commands"| Web
 ```
 
-The browser asks the REST API for study spaces; Django turns each search into one PostGIS query; results return as JSON and are drawn on the map. Details, a request sequence diagram and the main design decisions are in **[docs/architecture.md](docs/architecture.md)**. The database schema, geometry and import process are in **[docs/database.md](docs/database.md)**.
+Nginx is the only way in: it serves the JavaScript, CSS and font itself and passes everything else to Gunicorn. The browser asks the REST API for study spaces; Django turns each search into one PostGIS query; results return as JSON and are drawn on the map. Details, a request sequence diagram and the main design decisions are in **[docs/architecture.md](docs/architecture.md)**. The database schema, geometry and import process are in **[docs/database.md](docs/database.md)**.
 
 ## Repository structure
 
@@ -109,6 +115,7 @@ spaces/                  Django app
   templates/, static/    Map and About pages, JavaScript modules, CSS and font
   tests/                 Django tests and synthetic import fixtures
 data/                    Source snapshots, checksums manifest and stable identity maps
+nginx/default.conf       Reverse proxy, static files and security headers
 frontend-tests/          Browser tests for the map page
 docs/                    Architecture, database, API, testing, deployment and data-source documentation
 .github/workflows/       Continuous integration
@@ -117,7 +124,7 @@ Dockerfile, docker-compose.yml, .env.example, requirements.txt
 
 ## Quick start
 
-Verified from a fresh clone on 2026-10-30 (see [docs/deployment.md](docs/deployment.md#clean-installation-verification)).
+Verified from a fresh clone on 2026-10-30, and rebuilt from empty volumes behind Nginx and Gunicorn on 2026-11-02 (see [docs/deployment.md](docs/deployment.md#clean-installation-verification)).
 
 **Prerequisites:** Git; Docker Desktop (Linux containers; WSL 2 backend on Windows) or Docker Engine with Compose v2; free host ports 8000 and 5050; internet access for the first build. No local Python installation is needed. Commands are shown for PowerShell; they also work in Bash except `Copy-Item` (use `cp`).
 
@@ -137,10 +144,10 @@ Verified from a fresh clone on 2026-10-30 (see [docs/deployment.md](docs/deploym
    docker compose build web
    docker compose up -d db pgadmin
    docker compose run --rm web /usr/local/bin/python manage.py migrate
-   docker compose up -d web
+   docker compose up -d web nginx
    ```
 
-   The database health check makes the other services wait until PostgreSQL is ready. The first build takes a few minutes.
+   The database health check makes the other services wait until PostgreSQL is ready. The first build takes a few minutes. Each time `web` starts it runs `collectstatic`, then Gunicorn; the site can take a few seconds to answer after a start.
 
 3. **Import the data** (areas first; locations are checked against them)
 
@@ -178,7 +185,7 @@ Compose passes these from `.env` to the services; Django reads them from its env
 | Variable | Purpose |
 | --- | --- |
 | `DJANGO_SECRET_KEY` | Long random Django signing secret (required) |
-| `DJANGO_DEBUG` | `True` or `False`; defaults to `False`. Use `True` locally: the development server serves the app's own JavaScript and CSS only in debug mode |
+| `DJANGO_DEBUG` | `True` or `False`; defaults to `False`, as in `.env.example`. Nginx serves the static files in both modes, so the site does not need debug mode |
 | `DJANGO_ALLOWED_HOSTS` | Comma-separated host names; defaults to `localhost,127.0.0.1,[::1]` |
 | `DJANGO_HTTPS` | `True` only when served over HTTPS: turns on HTTPS redirect, HSTS and secure-only cookies. Defaults to `False` for local `http://localhost` |
 | `POSTGRES_DB`, `POSTGRES_USER`, `POSTGRES_PASSWORD` | Database name and account, created when the volume is first initialised |
@@ -201,8 +208,8 @@ Single-quote values in `.env` that contain `$` or `#`. Do not share the generate
 
 | Suite | Size | Command |
 | --- | --- | --- |
-| Django tests (models, API, permissions, spatial queries, imports, settings, page) against a separate PostGIS test database | 138 tests | `docker compose exec web /usr/local/bin/python manage.py test spaces` |
-| Browser tests of the map page (needs Node 22+ and Chrome, Chromium or Edge; the app running with data imported) | 43 checks | `node frontend-tests/map-ui.test.mjs` |
+| Django tests (models, API, permissions, spatial queries, imports, settings, page) against a separate PostGIS test database | 143 tests | `docker compose exec web /usr/local/bin/python manage.py test spaces` |
+| Browser tests of the map page (needs Node 22+ and Chrome, Chromium or Edge; the app running with data imported) | 45 checks | `node frontend-tests/map-ui.test.mjs` |
 | System and migration checks | | `docker compose exec web /usr/local/bin/python manage.py check` and `… makemigrations --check --dry-run` |
 
 [GitHub Actions](.github/workflows/tests.yml) runs all of these on every push and pull request, using this repository's own `Dockerfile` and `docker-compose.yml` with throwaway test credentials. What each test covers, the verified results and how intermittent failures were diagnosed are in **[docs/testing.md](docs/testing.md)**.
@@ -250,9 +257,9 @@ The exact snapshots used are committed in `data/raw/` with SHA-256 checksums, re
 
 - Facility counts on the filters reflect the moment the page loaded.
 - Choosing an arbitrary map point needs a pointer or touch; keyboard users can choose a campus, their location or a marker.
-- Geolocation needs a secure origin, so it works on `localhost` but not when the development server is opened from another device over plain HTTP.
+- Geolocation needs a secure origin, so it works on `localhost` but not when the site is opened from another device over plain HTTP.
 - The API is not paginated (657 records) and has no rate limiting.
-- The local setup uses Django's development server over HTTP; see [Deployment beyond local development](#deployment-beyond-local-development).
+- The local setup is served over plain HTTP on `localhost`; see [Deployment beyond local development](#deployment-beyond-local-development).
 
 **Possible improvements:** facility reports from users with moderation; opening hours from OpenStreetMap; wider coverage beyond Dublin City Council; a geography column or projected index for index-assisted radius searches at larger scale; pagination; and a production deployment as outlined in [docs/deployment.md](docs/deployment.md#production-and-cloud-deployment).
 
@@ -260,19 +267,20 @@ The exact snapshots used are committed in `data/raw/` with SHA-256 checksums, re
 
 | Problem | Solution |
 | --- | --- |
-| The map page loads but the map is blank and `map.js` returns 404 | Set `DJANGO_DEBUG=True` in `.env` and run `docker compose up -d web` (the development server serves static files only in debug mode). After adding new static files, run `docker compose restart web`. |
+| The map page loads but the map is blank and `map.js` returns 404 | Nginx serves files that `collectstatic` copied to the `static_data` volume when `web` started. Check that both services are up with `docker compose ps`, and look for errors with `docker compose logs web nginx`. Run `docker compose restart web` to collect the files again. |
+| 502 Bad Gateway | Gunicorn is still starting or has stopped. Wait a few seconds, then check `docker compose logs web`. |
 | Map tiles show "Access blocked" | The browser is not sending a `Referer` header; the tile layer requests one with `referrerPolicy`. Hard-refresh (Ctrl+F5) to load the current `map.js`. |
-| Changes to code are not picked up | Synced folders (OneDrive, Dropbox) can delay file-change events; run `docker compose restart web`. Hard-refresh the browser for JavaScript and CSS. |
+| Changes to code are not picked up | Gunicorn does not reload changed code, and changed JavaScript and CSS must be collected again: run `docker compose restart web`. Browsers may cache static files for up to a week, so hard-refresh (Ctrl+F5) as well. |
 | `Set DJANGO_SECRET_KEY …` or a similar error on start | `.env` is missing a value or still has a `change-me` placeholder. |
 | Port 8000 or 5050 is in use | Stop the other service, or change the host side of the port mapping. |
 | Network subnet overlaps | Set another private range in `DOCKER_SUBNET`, then `docker compose down` and `docker compose up -d` (data is kept). |
 | Database password change has no effect | `POSTGRES_*` values are only applied when the volume is first created. |
 | Import says areas are missing | Run `import_administrative_areas --repair-invalid` before the library and café imports. |
-| Logs | `docker compose logs --tail 50 web db pgadmin` (remove secrets before sharing). |
+| Logs | `docker compose logs --tail 50 nginx web db pgadmin` (remove secrets before sharing). |
 
 ## Deployment beyond local development
 
-The Compose setup is a **local development environment**: Django's development server, plain HTTP and a PostgreSQL superuser account. Running StudySmart publicly would need a WSGI server (for example Gunicorn), collected static files, HTTPS with secure cookies and HSTS, `DJANGO_DEBUG=False`, a restricted database role, managed secrets and backups. `manage.py check --deploy` reports exactly the HTTPS-related settings to enable. A step-by-step outline for a cloud host with managed PostGIS is in **[docs/deployment.md](docs/deployment.md#production-and-cloud-deployment)**, together with the security review, the clean-install procedure and the persistence check.
+The Compose setup uses **production-style serving on a local machine**: Nginx in front of Gunicorn with `DJANGO_DEBUG=False`, but over plain HTTP, with a PostgreSQL superuser account and only listening on `127.0.0.1`. Running StudySmart publicly would also need HTTPS with secure cookies and HSTS, a restricted database role, managed secrets and backups. `manage.py check --deploy` reports exactly the HTTPS-related settings to enable. A step-by-step outline for a cloud host with managed PostGIS is in **[docs/deployment.md](docs/deployment.md#production-and-cloud-deployment)**, together with the security review, the clean-install procedure and the persistence check.
 
 ## Development process
 

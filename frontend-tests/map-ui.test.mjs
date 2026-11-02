@@ -296,6 +296,15 @@ function check(name, ok, detail = "") {
 }
 
 async function run() {
+    // Nginx serves the static files and adds the security headers. Django sends the same headers
+    // for proxied pages, so a duplicate would appear here as "DENY, DENY".
+    const staticHeaders = (await fetch(`${BASE}/static/spaces/js/map.js`)).headers;
+    check("Nginx serves static files with a long cache lifetime", staticHeaders.get("server") === "nginx"
+        && staticHeaders.get("cache-control") === "max-age=604800", staticHeaders.get("cache-control") ?? "no cache header");
+    const pageHeaders = (await fetch(`${BASE}/`)).headers;
+    check("pages and static files send each security header once", [staticHeaders, pageHeaders].every((headers) => headers.get("x-frame-options") === "DENY"
+        && headers.get("x-content-type-options") === "nosniff" && headers.get("referrer-policy") === "same-origin"));
+
     await connect();
     await send("Page.enable");
     await send("Runtime.enable");
