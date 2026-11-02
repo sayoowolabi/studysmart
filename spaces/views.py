@@ -14,7 +14,7 @@ from .serializers import (
     StudySpaceNearestSerializer, StudySpaceSerializer,
 )
 from .spatial import (
-    area_boundaries, area_coverage, nearest_space, search_point, spaces_within,
+    area_boundaries, area_coverage, areas_around, nearest_space, search_point, spaces_within,
 )
 from .universities import CAMPUSES
 
@@ -165,6 +165,18 @@ class AreaCoverageView(APIView):
 
     def get(self, request):
         return Response(area_coverage())
+
+
+class AreaIntersectionView(APIView):
+    """GET /api/areas/intersecting/?lat=&lng=&radius=: the areas around a search point."""
+
+    permission_classes = [AllowAny]
+
+    def get(self, request):
+        query = NearbyQuerySerializer(data=request.query_params)
+        query.is_valid(raise_exception=True)
+        point = search_point(query.validated_data["lat"], query.validated_data["lng"])
+        return Response(areas_around(point, query.validated_data["radius"]))
 
 
 class AreaBoundaryView(APIView):

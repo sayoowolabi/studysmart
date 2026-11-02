@@ -1,7 +1,7 @@
 """Spatial queries for the API. All geometry work runs in PostGIS, not Python."""
 import json
 
-from django.contrib.gis.db.models import LineStringField
+from django.contrib.gis.db.models import LineStringField, PolygonField
 from django.contrib.gis.db.models.functions import AsGeoJSON, Distance, GeoFunc
 from django.contrib.gis.geos import Point
 from django.contrib.gis.measure import D
@@ -64,6 +64,31 @@ def area_coverage():
             "total_count": sum(counts.values()),
         })
     return coverage
+
+
+class GeodesicBuffer(GeoFunc):
+    """
+    ST_Buffer(point::geography, metres)::geometry: a circle measured in metres on the ground.
+    On geometry in EPSG:4326 the radius would be in degrees, and at Dublin's latitude a degree
+    of longitude is only about 60% as long as a degree of latitude.
+    """
+
+    function = "ST_Buffer"
+    arg_joiner = "::geography, "  # Between the two arguments, so it casts only the point.
+    template = "%(function)s(%(expressions)s)::geometry"
+    geom_param_pos = (0,)
+    output_field = PolygonField(srid=4326)
+
+
+def areas_around(point, radius_m):
+    """The area containing the point (None if outside all) and all areas within reach of the radius."""
+    areas = AdministrativeArea.objects.values("id", "source_id", "name")
+    return {
+        # ST_Covers includes the edge, like ST_CoveredBy in area_coverage(). A point on a shared
+        # border is covered by both areas, and the first by name is reported.
+        "containing_area": areas.filter(boundary__covers=point).first(),
+        "intersecting_areas": list(areas.filter(boundary__intersects=GeodesicBuffer(point, radius_m))),
+    }
 
 
 # Five decimal places of a degree is about 1 m, which is ample for a map outline and
