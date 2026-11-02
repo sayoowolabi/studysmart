@@ -1,3 +1,4 @@
+# AI assistance: parts of this file were written with Claude.
 """Shared snapshot validation and transactional source-key upserts."""
 import hashlib
 import json

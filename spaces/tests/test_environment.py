@@ -368,3 +368,8 @@ class ProductionServingTests(SimpleTestCase):
             self.assertIn(f"proxy_hide_header {header};", config)
         # add_header in a location would silently drop the server-level security headers there.
         self.assertEqual(len(re.findall(r"(?m)^\s*add_header ", config)), 3)
+
+    def test_only_admin_pages_send_their_origin_to_other_sites(self):
+        # OSM blocks the admin map widget's tiles without a Referer; the widget cannot request one itself.
+        config = self.project_file("nginx/default.conf")
+        self.assertRegex(config, r"default same-origin;\n\s*~\^/admin/ strict-origin-when-cross-origin;")

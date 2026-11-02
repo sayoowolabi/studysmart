@@ -198,3 +198,5 @@ Current data (2026-10-30):
 | Laptops allowed | 0 / 0 / 633 | all 24 unknown |
 
 No record is currently administrator-verified, manual or demonstration data: every row is either `official` (Dublin City Council) or `osm` (OpenStreetMap). 112 cafés have an approximate position (`osm_center`); the other 521 cafés and all libraries use source coordinates.
+
+(This document was made with assistance from OpenAI Codex)

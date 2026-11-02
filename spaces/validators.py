@@ -1,3 +1,4 @@
+# AI assistance (Claude): added the point and boundary checks for empty, 3D, non-EPSG:4326, non-finite, out-of-range and invalid geometry.
 """Geometry validation shared by model forms and import commands."""
 import math
 

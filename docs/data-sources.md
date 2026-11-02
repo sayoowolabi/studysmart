@@ -143,3 +143,5 @@ This is intentionally a group-level lock, not a per-field history system. Source
 ## Testing
 
 Import and facility-mapping tests use temporary manifests and synthetic fixtures with a separate PostGIS test database, and make no network calls. They cover repeat and changed imports, source removals, manual protection, malformed inputs, non-finite and swapped coordinates, CRS transformation, Z removal and explicit geometry repair. See [testing.md](testing.md) for the full test suite and verified results.
+
+(This document was made with assistance from OpenAI Codex)

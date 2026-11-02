@@ -2,7 +2,7 @@
 
 Campuses are search origins only: they are not study spaces and are never stored
 or returned by the API. Each point is the representative point of the named
-OpenStreetMap campus element, retrieved on 2026-10-29 through Nominatim and
+OpenStreetMap campus element, retrieved through Nominatim and
 Overpass (© OpenStreetMap contributors, ODbL), rounded to five decimal places.
 """
 from dataclasses import dataclass

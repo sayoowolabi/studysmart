@@ -1,3 +1,4 @@
+# AI assistance (Claude): added the Overpass response checks and the conversion of named OSM cafés into StudySpace records.
 from django.core.management.base import CommandError
 
 from spaces.importers.common import SnapshotImportCommand, read_json, source_point

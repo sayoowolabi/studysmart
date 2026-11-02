@@ -92,7 +92,7 @@ Named volumes are not backups. A backup can be taken with `docker compose exec d
 | API | Only the study-space list and detail accept writes; searches and area endpoints are read-only. Inputs are validated by serializers and the model's `full_clean()`; provenance fields are read-only |
 | Network | The database and Gunicorn have no host port; Nginx and pgAdmin listen on `127.0.0.1` only; the web container runs as an unprivileged user |
 | Nginx | The only entry point to the site. Hides its version (`server_tokens off`), limits request bodies to 5 MB, and mounts only the static files (read-only), so it cannot read the source code or `.env`. Passes `Host`, `X-Forwarded-For` and `X-Forwarded-Proto` to Django, which still checks `Host` against the allowed hosts |
-| Browser | `X-Frame-Options: DENY`, `X-Content-Type-Options: nosniff`, `Referrer-Policy: same-origin` (set by Nginx on every response, replacing Django's copies so that each is sent once), `Cross-Origin-Opener-Policy: same-origin` (from Django); API text inserted with `textContent`; CDN files pinned with Subresource Integrity hashes |
+| Browser | `X-Frame-Options: DENY`, `X-Content-Type-Options: nosniff`, `Referrer-Policy: same-origin`, or `strict-origin-when-cross-origin` on `/admin/` so that the map widget's OpenStreetMap tiles are not blocked (set by Nginx on every response, replacing Django's copies so that each is sent once), `Cross-Origin-Opener-Policy: same-origin` (from Django); API text inserted with `textContent`; CDN files pinned with Subresource Integrity hashes |
 
 These are covered by tests (see [testing.md](testing.md)). `manage.py check --deploy` with `DJANGO_DEBUG=False` (2026-11-02) reports:
 
@@ -114,3 +114,5 @@ The local setup already serves the site through Nginx and Gunicorn, but it is de
 6. **Release process:** build the image in CI, run `migrate` as a one-off release step, run the imports once, and promote the image only when CI is green.
 7. **Operations:** do not expose pgAdmin publicly; add logging and monitoring, and consider rate limiting and pagination for the public API.
 8. **Map tiles:** OpenStreetMap's public tile servers are not intended for heavy production traffic; use a commercial or self-hosted tile service at scale.
+
+(This document was made with assistance from OpenAI Codex)

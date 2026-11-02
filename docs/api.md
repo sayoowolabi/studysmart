@@ -311,3 +311,5 @@ Validation errors use DRF's standard shape, `{"field": ["message"]}`; other erro
 | 409 | Deleting an imported record | `{"detail": "Imported records cannot be deleted because the next import would recreate them. Only manually created records can be deleted."}` |
 
 Latitude, longitude and radius also reject `NaN` and infinity. Unknown query parameters are ignored.
+
+(This document was made with assistance from OpenAI Codex)

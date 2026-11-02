@@ -147,7 +147,7 @@ All four share a dedicated bridge network (`studysmart_network`) with a configur
 
 | When | Service | Use |
 | --- | --- | --- |
-| In the browser, at run time | OpenStreetMap tile server | Base map tiles. The tile layer sends only the site origin as `Referer`, as the tile usage policy requires |
+| In the browser, at run time | OpenStreetMap tile server | Base map tiles. Both the main map and the admin's map widget send only the site origin as `Referer`, as the tile usage policy requires |
 | In the browser, at run time | unpkg, jsDelivr | Leaflet 1.9.4 and Bootstrap 5.3.3 at pinned versions with Subresource Integrity hashes |
 | Building the image | Docker Hub, PyPI, Debian | Base images and packages |
 | Acquiring data (already done; snapshots committed) | Smart Dublin, Overpass API, Nominatim | Library and area files, café data, campus coordinates. Imports and tests make no network calls |
@@ -169,6 +169,8 @@ All four share a dedicated bridge network (`studysmart_network`) with a configur
 | Native ES modules, `textContent` only, requests cancelled with `AbortController` | No build tooling; external text cannot inject markup; a slow earlier response cannot overwrite a newer search | Older browsers without module support are not supported |
 | Campuses as a constant list, not a model | They are fixed search starting points, never study spaces or API data | Adding a campus is a code change |
 | CI runs the project's own Compose stack; browser tests use no npm packages | CI matches local versions of GDAL, GEOS and PostGIS; no extra dependency tree to maintain | The CI job builds the image on every run (about a minute) |
-| Self-hosted font, SRI-pinned CDN files, origin-only `Referer` for tiles | Fewer third-party requests; altered CDN files are refused; tile requests comply with policy without loosening the site's referrer policy | Pinned versions must be updated deliberately |
+| Self-hosted font, SRI-pinned CDN files, origin-only `Referer` for tiles | Fewer third-party requests; altered CDN files are refused; tile requests comply with policy while public pages keep the stricter referrer policy; only `/admin/` pages, whose map widget cannot set its own, send their origin to other sites | Pinned versions must be updated deliberately |
 
 The security configuration (environment-only secrets, host checks, security headers, permissions and the `check --deploy` review) is described in [deployment.md](deployment.md#security-review).
+
+(This document was made with assistance from OpenAI Codex)

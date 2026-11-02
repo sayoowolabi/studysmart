@@ -4,8 +4,8 @@ StudySmart has two automated suites, both run in continuous integration:
 
 | Suite | Location | Size | Runs against |
 | --- | --- | --- | --- |
-| Django tests | [spaces/tests/](../spaces/tests/) | 154 tests | A separate PostGIS test database created and removed by Django |
-| Browser tests | [frontend-tests/map-ui.test.mjs](../frontend-tests/map-ui.test.mjs) | 49 checks | The running site with the committed data imported, in headless Chrome or Edge |
+| Django tests | [spaces/tests/](../spaces/tests/) | 155 tests | A separate PostGIS test database created and removed by Django |
+| Browser tests | [frontend-tests/map-ui.test.mjs](../frontend-tests/map-ui.test.mjs) | 50 checks | The running site with the committed data imported, in headless Chrome or Edge |
 
 ## Running the tests
 
@@ -33,16 +33,16 @@ The Django test database is separate from the application database and is delete
 | [test_spatial.py](../spaces/tests/test_spatial.py) | 35 | Radius search with **known distances** (0.005° and 0.01° of latitude ≈ 556 m and 1,112 m, ±1 m) and the radius edge; combined type and facility filters; unknown seating in a radius search; empty results; invalid and missing parameters; radius limits; nearest with distance and filters, 404; the PostGIS line from the search point to the nearest match; containment counts with a point **on a shared border** counted in both areas; an **L-shaped area** that excludes a point inside its bounding box and a point 0.7 m outside its edge; boundary GeoJSON in `[longitude, latitude]` order with 5-decimal rounding; **buffer and intersection** with fictional squares of known size: a buffer reaching or stopping short of a neighbouring area, a radius in metres and not degrees, a point outside every area, a shared border, an L-shaped area's notch, extreme valid coordinates and invalid parameters; read-only endpoints; number of SQL queries per request |
 | [test_imports.py](../spaces/tests/test_imports.py) | 23 | **Repeat imports create no duplicates** (`unchanged`); library name aliases keep the same record; missing, invalid and swapped coordinates; changed source tags update records; **locked facilities survive re-import**; records missing from a newer snapshot are not deleted; conflicting duplicate IDs roll back the whole import; checksum mismatch and partial Overpass responses fail before any write; dry runs persist nothing; **ITM to EPSG:4326 transformation**; conflicting CRS rejected; Z values removed and recorded; invalid boundaries rejected unless explicitly repaired; incomplete area sets block location imports |
 | [test_facilities.py](../spaces/tests/test_facilities.py) | 12 | OSM tag mapping: missing tags stay unknown; explicit yes/no; supported seating values; conflicting, conditional and unrecognised values stay unknown; Wi-Fi needs wireless evidence; socket counts and the `bs1363` socket key; Wi-Fi does not imply laptop permission |
-| [test_environment.py](../spaces/tests/test_environment.py) | 39 | PostGIS is available (`PostGIS_Version()`); `DEBUG` defaults to off and accepts only `True`/`False`; `DJANGO_HTTPS` is off by default, accepts only `True`/`False` and, when on, leaves `check --deploy` with no warnings; missing or placeholder secrets and a missing database password stop Django; default allowed hosts are local only; unknown hosts get 400; **security headers** on pages and the API; the map page: API URLs from `{% url %}`, labelled controls, filter values matching API parameters, radius choices within the API limit, result-size choices, pinned CDN files with integrity hashes, OSM attribution, **no module inserting HTML**, one `h1` and one live region, self-hosted font with its licence, café facility filters disabled when no café confirms them; the header link to the About page; the About page's single `h1`, link back to the map, data attribution and choices built from the map page's settings; **production serving**: `collectstatic` gathers the app, admin and API files, without HTTPS `check --deploy` warns only about the HTTPS settings, only Nginx publishes the site, and the Nginx configuration keeps the port for CSRF and sends each security header once |
+| [test_environment.py](../spaces/tests/test_environment.py) | 40 | PostGIS is available (`PostGIS_Version()`); `DEBUG` defaults to off and accepts only `True`/`False`; `DJANGO_HTTPS` is off by default, accepts only `True`/`False` and, when on, leaves `check --deploy` with no warnings; missing or placeholder secrets and a missing database password stop Django; default allowed hosts are local only; unknown hosts get 400; **security headers** on pages and the API; the map page: API URLs from `{% url %}`, labelled controls, filter values matching API parameters, radius choices within the API limit, result-size choices, pinned CDN files with integrity hashes, OSM attribution, **no module inserting HTML**, one `h1` and one live region, self-hosted font with its licence, café facility filters disabled when no café confirms them; the header link to the About page; the About page's single `h1`, link back to the map, data attribution and choices built from the map page's settings; **production serving**: `collectstatic` gathers the app, admin and API files, without HTTPS `check --deploy` warns only about the HTTPS settings, only Nginx publishes the site, and the Nginx configuration keeps the port for CSRF, sends each security header once and lets only admin pages send their origin to other sites |
 | [test_universities.py](../spaces/tests/test_universities.py) | 4 | Campus points are valid, in Dublin and traceable to an OSM element; only UCD has a coverage note; the selector renders each campus's coordinates; campuses are not study spaces |
 
 **Spatial tests run against real PostGIS.** The database engine is fixed to `django.contrib.gis.db.backends.postgis` in settings (there is no SQLite fallback); `test_postgis_is_available` queries `PostGIS_Version()`; and the spatial assertions would fail without PostGIS's distance and containment functions.
 
 ## Browser tests
 
-[frontend-tests/map-ui.test.mjs](../frontend-tests/map-ui.test.mjs) drives a headless Chromium-based browser through the Chrome DevTools Protocol, using only Node's built-in `WebSocket` (no npm packages). Expected values are fetched from the running API, so the checks follow the imported data. The 49 checks cover:
+[frontend-tests/map-ui.test.mjs](../frontend-tests/map-ui.test.mjs) drives a headless Chromium-based browser through the Chrome DevTools Protocol, using only Node's built-in `WebSocket` (no npm packages). Expected values are fetched from the running API, so the checks follow the imported data. The 50 checks cover:
 
-- **Nginx** serving static files with cache headers, and each security header sent once;
+- **Nginx** serving static files with cache headers, each security header sent once, and the admin's referrer policy for map tiles;
 - the all-spaces map, the self-hosted font, one `h1` and one live region;
 - campus search: the top 10 cards in the **same order and with the same IDs as the API**, matching numbered markers, the starting-point pin;
 - **card facility chips matching true/false/unknown in the API**; library cards and popups showing no facility list; a café filter keeping every library; 50 results matching the API;
@@ -84,7 +84,7 @@ Running the suites repeatedly in CI exposed three order- and timing-dependent pr
 
 One later failure has **no confirmed cause**. On 2026-11-02, "tablet: card click scrolls the map into view" failed in 2 of 6 local runs with real map tiles, when it checked the map's position once after a fixed 1.5 s wait. The check now waits up to 8 s for the map to come into view, reports how long that took, and requires it to still be there 1.5 s later. All 8 runs of the final check passed, half of them just after restarting `web`, with the map in view after 432–721 ms. This suggests an occasional slow scroll rather than a repeatable fault, but the failure was not reproduced, so that is not proven.
 
-## Verified results
+## Recent results
 
 | Date | Check | Result |
 | --- | --- | --- |
@@ -96,4 +96,6 @@ One later failure has **no confirmed cause**. On 2026-11-02, "tablet: card click
 
 ## What is not automated
 
-These need a person and a real browser: keyboard-only use with a screen reader, real phones and tablets (the Compose setup only listens on `localhost`, so use browser device emulation), the pgAdmin interface, and the Django admin's map widgets. The Django tests do cover the admin's permissions and validation rules. The create, update and delete steps in the [README demo section](../README.md#assessment--demo) were walked through once by script on 2026-11-02, including a click on the map widget, but are not part of either suite.
+These need a person and a real browser: keyboard-only use with a screen reader, real phones and tablets (the Compose setup only listens on `localhost`, so use browser device emulation), the pgAdmin interface, and the Django admin's map widgets. The Django tests do cover the admin's permissions and validation rules. The create, update and delete steps in the were walked through once by script on 2026-11-02, including a click on the map widget, but are not part of either suite. Blocked tiles need looking at: OpenStreetMap can return its "Access blocked" image with HTTP status 200, so a status check does not detect it.
+
+(This document was made with assistance from OpenAI Codex)
