@@ -82,6 +82,8 @@ Running the suites repeatedly in CI exposed three order- and timing-dependent pr
 | Browser test could not click a result marker in *Pick on map* mode | The test waited for a summary text that the previous step had already shown, and could act before the new search and map animation finished. Added diagnostics later showed the markers out of view | Wait for that search to finish, centre the map on result 1 through its card, and click only a marker that is visible and no longer moving |
 | Browser did not start within 10 s on some runners | Slow Chrome start-up on shared runners | Allow 30 s; fail immediately with the browser's own output if it crashes |
 
+One later failure has **no confirmed cause**. On 2026-11-02, "tablet: card click scrolls the map into view" failed in 2 of 6 local runs with real map tiles, when it checked the map's position once after a fixed 1.5 s wait. The check now waits up to 8 s for the map to come into view, reports how long that took, and requires it to still be there 1.5 s later. All 8 runs of the final check passed, half of them just after restarting `web`, with the map in view after 432–721 ms. This suggests an occasional slow scroll rather than a repeatable fault, but the failure was not reproduced, so that is not proven.
+
 ## Verified results
 
 | Date | Check | Result |
@@ -90,7 +92,8 @@ Running the suites repeatedly in CI exposed three order- and timing-dependent pr
 | 2026-10-29 | CI on `main` after merging, commit `4efc69c` | Passed |
 | 2026-10-30 | Clean installation from a fresh clone of `main` (`4efc69c`) | `check` and `pip check` clean; 129 tests passed in random order; 39 of 39 browser checks; see [deployment.md](deployment.md#clean-installation-verification) |
 | 2026-10-30 | Development environment | 129 tests passed; `makemigrations --check`: no changes |
+| 2026-11-02 | Stack rebuilt from empty volumes behind Nginx and Gunicorn, `DJANGO_DEBUG=False` | 154 tests passed in random order; 49 of 49 browser checks through Nginx, 8 runs in a row with real map tiles; `check`, `pip check` and `makemigrations --check` clean; imports repeated with everything `unchanged`; see [deployment.md](deployment.md#nginx-and-gunicorn-verification). The updated GitHub Actions workflow had not yet run |
 
 ## What is not automated
 
-These need a person and a real browser: keyboard-only use with a screen reader, real phones and tablets (the Compose setup only listens on `localhost`, so use browser device emulation), the pgAdmin interface, and the Django admin's map widgets. The Django tests do cover the admin's permissions and validation rules.
+These need a person and a real browser: keyboard-only use with a screen reader, real phones and tablets (the Compose setup only listens on `localhost`, so use browser device emulation), the pgAdmin interface, and the Django admin's map widgets. The Django tests do cover the admin's permissions and validation rules. The create, update and delete steps in the [README demo section](../README.md#assessment--demo) were walked through once by script on 2026-11-02, including a click on the map widget, but are not part of either suite.

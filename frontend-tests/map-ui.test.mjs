@@ -569,11 +569,18 @@ async function run() {
             // Jump (not smooth-scroll) to the results, so only the page's own scrolling is measured.
             await evaluate(`scrollTo({top: document.querySelector(".panel-results").offsetTop, behavior: "instant"})`);
             await evaluate(`document.querySelectorAll(".result-card")[1].click()`);
-            await sleep(1500); // The page uses smooth scrolling.
-            check(`${name}: card click scrolls the map into view`, await evaluate(`(() => {
+            // The page uses smooth scrolling, which takes longer on a busy machine.
+            const scrollStart = Date.now();
+            const mapInView = `(() => {
                 const box = document.getElementById("map").getBoundingClientRect();
                 return box.top >= -1 && box.bottom <= innerHeight + 1;
-            })()`));
+            })()`;
+            const reached = await waitFor(mapInView, 8000);
+            const reachedAfter = Date.now() - scrollStart;
+            await sleep(1500); // It must also stay there, not scroll back out.
+            const position = await evaluate(`JSON.stringify({scrollY, innerHeight, map: document.getElementById("map").getBoundingClientRect()})`);
+            check(`${name}: card click scrolls the map into view and it stays there`, reached && await evaluate(mapInView),
+                `${reachedAfter} ms; ${position}`);
             await evaluate(`scrollTo({top: 0, behavior: "instant"})`);
         }
         await screenshot(name);

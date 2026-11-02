@@ -14,6 +14,7 @@ It is an individual project for the Advanced Web Mapping / Location-Based Servic
 - [Architecture](#architecture)
 - [Repository structure](#repository-structure)
 - [Quick start](#quick-start)
+  - [Assessment / demo](#assessment--demo)
 - [Environment variables](#environment-variables)
 - [Tests and continuous integration](#tests-and-continuous-integration)
 - [API](#api)
@@ -177,6 +178,30 @@ Verified from a fresh clone on 2026-10-30, and rebuilt from empty volumes behind
    To browse the database in pgAdmin, log in with your `PGADMIN_DEFAULT_*` values and register a server with host `db`, port `5432` and your `POSTGRES_*` database, user and password.
 
 **Stopping and restarting:** `docker compose stop` / `docker compose start`, or `docker compose down` / `docker compose up -d` to recreate the containers. Data lives in the named volume `studysmart_postgres_data` and survives both. **Never add `-v`** to `docker compose down` unless you intend to delete the database.
+
+### Assessment / demo
+
+The public map and every `GET` endpoint need no login. Creating, updating and deleting study spaces needs an administrator, which you create yourself:
+
+```powershell
+docker compose exec web python manage.py createsuperuser
+```
+
+Choose the username and password when prompted. No demo account or password is included in the repository, and real passwords must never be committed.
+
+Log in at [http://localhost:8000/admin/](http://localhost:8000/admin/). Create, update and delete can then be shown in two ways:
+
+| Operation | Django admin, [`/admin/spaces/studyspace/`](http://localhost:8000/admin/spaces/studyspace/) | Browsable API, [`/api/spaces/`](http://localhost:8000/api/spaces/) (same browser session) |
+| --- | --- | --- |
+| Create | *Add study space*: fill in the name and type, and click the map widget to place the point | Use the form at the bottom of the list page, with `latitude` and `longitude` |
+| Update | Open the record and change it | Open `/api/spaces/{id}/` and send a `PATCH` from the *Raw data* tab, for example `{"address": "New address"}` |
+| Delete | Open the record and choose *Delete* | Open `/api/spaces/{id}/` and use the *DELETE* button |
+
+Things to know for the demonstration:
+
+- **Use a record you created.** Imported records are protected because the next import would overwrite them: their source fields are read-only, and deleting one through the API returns `409 Conflict`. Their facilities can be corrected, with evidence notes.
+- **The map widget opens over France**, GeoDjango's default position. Zoom out and pan to Dublin before placing the point.
+- **The first requests after a start are slower** while each Gunicorn worker warms up, so open the pages once beforehand. The browsable list page contains all 657 records and takes a couple of seconds.
 
 ## Environment variables
 
