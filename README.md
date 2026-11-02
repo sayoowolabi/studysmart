@@ -295,5 +295,3 @@ Continuous integration, a verified clean installation and the engineering decisi
 ## Attribution
 
 Library and area data © Dublin City Council (CC BY). Café and campus data © OpenStreetMap contributors (ODbL). Map tiles © OpenStreetMap contributors. Leaflet, Bootstrap and Django are used under their respective open-source licences. Nunito is used under the SIL Open Font License.
-
-AI assistance was used for the initial documentation, Issues #1–8 and the Issue #15 redesign. The student must review, verify and understand the work, and document assistance according to the module policy.
