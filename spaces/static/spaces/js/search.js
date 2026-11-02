@@ -8,6 +8,7 @@
  * Every change re-runs the search automatically, always with the same filters:
  *   no starting point     - every matching space        GET /api/spaces/?filters
  *   starting point        - matches within the radius   GET /api/spaces/nearby/?lat&lng&radius&filters
+ *                           and the areas it reaches    GET /api/areas/intersecting/?lat&lng&radius
  *   "Show nearest match"  - the closest match anywhere  GET /api/spaces/nearest/?lat&lng&filters
  * PostGIS does all distance, radius and nearest work; the browser only displays results.
  */
@@ -37,6 +38,7 @@ const state = {
     markers: new Map(),      // study-space id -> marker currently on the map
     activeId: null,          // id of the highlighted result
     controller: null,        // AbortController of the request in progress
+    areaController: null,    // AbortController of the area-line request in progress
 };
 
 export function initSearch(map, layers, urls) {
@@ -286,6 +288,7 @@ async function fetchLatest(url) {
 async function runSearch() {
     updateFilterSummary();
     showActions(false);
+    clearAreaLine();
     if (selectedTypes().length === 0) {
         state.controller?.abort();
         display([]);
@@ -345,6 +348,7 @@ async function searchNearby() {
     const circle = L.circle(state.origin.latlng, {
         radius, color: "#5a54d6", weight: 1.5, fillOpacity: 0.04, interactive: false,
     }).addTo(state.overlay);
+    showAreaLine(radius); // Not awaited: it adds context and must never delay or fail the search.
 
     const within = `within ${formatDistance(radius)}`;
     if (spaces.length === 0) {
@@ -357,6 +361,49 @@ async function searchNearby() {
     fitTo(top);
     const noun = spaces.length === 1 ? "study space" : "study spaces";
     showSummary(`Showing ${top.length} of ${spaces.length} nearby ${noun} (${within}), nearest first.`);
+}
+
+function clearAreaLine() {
+    state.areaController?.abort();
+    const line = element("results-areas");
+    line.textContent = "";
+    line.hidden = true;
+}
+
+/* One line naming the administrative areas a radius search reaches. If it fails, the line stays hidden. */
+async function showAreaLine(radius) {
+    const controller = new AbortController();
+    state.areaController = controller;
+    const {lat, lng} = state.origin.latlng;
+    const params = new URLSearchParams({lat: lat.toFixed(6), lng: lng.toFixed(6), radius});
+    try {
+        const areas = await fetchJson(`${state.urls.intersectingUrl}?${params}`, controller.signal);
+        if (!controller.signal.aborted) {
+            const line = element("results-areas");
+            line.textContent = areaLineText(areas);
+            line.hidden = false;
+        }
+    } catch (error) {
+        if (!isAbortError(error)) {
+            console.warn(error);
+        }
+    }
+}
+
+function areaLineText({containing_area: containing, intersecting_areas: intersecting}) {
+    const others = intersecting.filter((area) => area.id !== containing?.id).map((area) => areaName(area));
+    const reached = new Intl.ListFormat("en-IE").format(others);
+    if (containing) {
+        const start = `You're in ${areaName(containing)}`;
+        return others.length > 0 ? `${start}; this search also reaches ${reached}.` : `${start}; this search reaches no other area.`;
+    }
+    const start = "This starting point is outside the Dublin City Council area";
+    return others.length > 0 ? `${start}; this search reaches ${reached}.` : `${start}.`;
+}
+
+/* The source stores area names in capitals: "SOUTH EAST" becomes "South East". */
+function areaName(area) {
+    return area.name.toLowerCase().replace(/\b\w/g, (letter) => letter.toUpperCase());
 }
 
 async function showNearestMatch() {
@@ -407,7 +454,7 @@ function fitTo(spaces) {
 }
 
 function showSummary(text) {
-    element("results-summary").textContent = text;
+    element("results-summary-text").textContent = text;
 }
 
 function showActions(visible) {

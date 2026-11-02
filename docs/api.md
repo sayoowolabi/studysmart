@@ -32,6 +32,7 @@ Authentication uses Django sessions: log in at `/admin/`, then use the browsable
 | GET | [`/api/spaces/nearest/`](#get-apispacesnearest) | Nearest study space |
 | GET | [`/api/areas/`](#get-apiareas) | Administrative-area boundaries (GeoJSON) |
 | GET | [`/api/areas/coverage/`](#get-apiareascoverage) | Libraries and cafés per area |
+| GET | [`/api/areas/intersecting/`](#get-apiareasintersecting) | The area containing a point and the areas within a radius of it |
 
 `PUT` is not offered (405); use `PATCH`. The area endpoints are read-only.
 
@@ -257,6 +258,36 @@ Library and café counts for each area, ordered by name. PostGIS: `ST_CoveredBy`
   {"id": 2, "source_id": "south-east", "name": "SOUTH EAST", "library_count": 8, "cafe_count": 299, "total_count": 307}
 ]
 ```
+
+### GET /api/areas/intersecting/
+
+Which administrative area contains a search point, and which areas a circle around it reaches. The map page uses it for the line under the results summary.
+
+| Parameter | Required | Rules |
+| --- | --- | --- |
+| `lat` | yes | −90 to 90, finite |
+| `lng` | yes | −180 to 180, finite |
+| `radius` | yes | Metres, greater than 0, at most 10,000 |
+
+PostGIS builds the circle with `ST_Buffer` on the point cast to `geography`, so the radius is in metres and never degrees, casts it back to `geometry`, and tests each boundary with `ST_Intersects`. `containing_area` comes from `ST_Covers`.
+
+`GET /api/areas/intersecting/?lat=53.34371&lng=-6.25443&radius=1000` (Trinity College Dublin):
+
+```json
+{
+  "containing_area": {"id": 2, "source_id": "south-east", "name": "SOUTH EAST"},
+  "intersecting_areas": [
+    {"id": 5, "source_id": "central", "name": "CENTRAL"},
+    {"id": 2, "source_id": "south-east", "name": "SOUTH EAST"}
+  ]
+}
+```
+
+- `intersecting_areas` is ordered by name and includes the containing area.
+- A point outside every area returns `"containing_area": null`. Its circle may still reach an area, as for UCD Belfield. If it reaches none, `intersecting_areas` is `[]`.
+- A point exactly on a shared boundary is covered by both areas; `containing_area` is the first by name.
+- PostGIS approximates the circle with a polygon, so its edge can fall up to about 0.5% short of the radius.
+- Study-space filters do not apply, and the response says nothing about study spaces: an area can be reached even if no study space there is within the radius.
 
 ---
 

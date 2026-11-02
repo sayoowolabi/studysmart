@@ -30,7 +30,7 @@ It is an individual project for the Advanced Web Mapping / Location-Based Servic
 
 - Interactive Leaflet map of **24 libraries** (Dublin City Council open data) and **633 cafés** (OpenStreetMap) in the Dublin City Council area. Libraries and cafés have different marker shapes and colours.
 - Three ways to choose a starting point: a **university campus** (eight campuses, coordinates taken from OpenStreetMap), **"Use my location"** (browser geolocation) or **"Pick on map"** (tap a point or a study-space marker).
-- Automatic search: the **10 nearest matches** (or 25 or 50, chosen under *Results shown*) appear as numbered result cards linked to numbered map markers. Clicking a card or a marker highlights both. The summary states the total, for example "Showing 10 of 250 nearby study spaces (within 1.0 km)".
+- Automatic search: the **10 nearest matches** (or 25 or 50, chosen under *Results shown*) appear as numbered result cards linked to numbered map markers. Clicking a card or a marker highlights both. The summary states the total, for example "Showing 10 of 250 nearby study spaces (within 1.0 km)", and a line below names the areas involved, for example "You're in South East; this search also reaches Central."
 - Filters: distance (500 m – 5 km), number of results, type (libraries, cafés) and, under *Filter cafés*, **confirmed café facilities** (indoor seating, Wi-Fi). Café filters never remove libraries. A facility that no café confirms is shown disabled.
 - Fallbacks when nothing is within the radius: *Search a wider area* and *Show nearest match*.
 - Popups with address, distance and indoor seating, outdoor seating and Wi-Fi as Yes / No / **Unknown**, plus source and licence. Libraries show no facility list, because the library dataset records none.
@@ -40,7 +40,7 @@ It is an individual project for the Advanced Web Mapping / Location-Based Servic
 
 **Spatial operations (PostGIS, via GeoDjango)**
 
-- Radius search (`ST_DistanceSphere`), nearest neighbour (distance order with `LIMIT 1`) and area containment with counts (`ST_CoveredBy`). The browser never calculates distances or containment.
+- Radius search (`ST_DistanceSphere`), nearest neighbour (distance order with `LIMIT 1`), area containment with counts (`ST_CoveredBy`, `ST_Covers`), and **buffering and intersection**: a circle measured in metres (`ST_Buffer` on `geography`) tested against the area boundaries (`ST_Intersects`). The browser never calculates distances or containment.
 - Points (study spaces), polygons (area boundaries) and lines: the nearest search returns the line from the starting point to the match, built by PostGIS (`ST_MakeLine`) and drawn on the map.
 
 **Data management**
@@ -107,7 +107,7 @@ spaces/                  Django app
   models.py              StudySpace and AdministrativeArea (PostGIS geometry)
   serializers.py         API representation and validation
   views.py               Map and About pages, REST API views and filters
-  spatial.py             All spatial queries (radius, nearest, containment, GeoJSON)
+  spatial.py             All spatial queries (radius, nearest, containment, buffer, GeoJSON)
   universities.py        Campus starting points (OpenStreetMap-sourced)
   validators.py          Geometry validation shared by API, admin and imports
   admin.py               Django admin with map widgets
@@ -208,8 +208,8 @@ Single-quote values in `.env` that contain `$` or `#`. Do not share the generate
 
 | Suite | Size | Command |
 | --- | --- | --- |
-| Django tests (models, API, permissions, spatial queries, imports, settings, page) against a separate PostGIS test database | 143 tests | `docker compose exec web /usr/local/bin/python manage.py test spaces` |
-| Browser tests of the map page (needs Node 22+ and Chrome, Chromium or Edge; the app running with data imported) | 45 checks | `node frontend-tests/map-ui.test.mjs` |
+| Django tests (models, API, permissions, spatial queries, imports, settings, page) against a separate PostGIS test database | 154 tests | `docker compose exec web /usr/local/bin/python manage.py test spaces` |
+| Browser tests of the map page (needs Node 22+ and Chrome, Chromium or Edge; the app running with data imported) | 49 checks | `node frontend-tests/map-ui.test.mjs` |
 | System and migration checks | | `docker compose exec web /usr/local/bin/python manage.py check` and `… makemigrations --check --dry-run` |
 
 [GitHub Actions](.github/workflows/tests.yml) runs all of these on every push and pull request, using this repository's own `Dockerfile` and `docker-compose.yml` with throwaway test credentials. What each test covers, the verified results and how intermittent failures were diagnosed are in **[docs/testing.md](docs/testing.md)**.
@@ -227,6 +227,7 @@ Single-quote values in `.env` that contain `$` or `#`. Do not share the generate
 | GET | `/api/spaces/nearest/?lat=&lng=` | The single nearest matching space | Public |
 | GET | `/api/areas/` | Administrative-area boundaries as GeoJSON | Public |
 | GET | `/api/areas/coverage/` | Library and café counts per area | Public |
+| GET | `/api/areas/intersecting/?lat=&lng=&radius=` | The area containing a point and the areas a circle around it reaches | Public |
 
 Parameters, example requests and responses, validation rules and every error status are documented in **[docs/api.md](docs/api.md)**.
 

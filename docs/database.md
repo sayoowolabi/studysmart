@@ -97,7 +97,7 @@ There is **no foreign key** between `StudySpace` and `AdministrativeArea`. Which
 
 ## Coordinate reference systems
 
-- All stored geometry uses **EPSG:4326** (WGS 84 longitude/latitude), the coordinate system of the libraries, the OSM data and Leaflet. No transformation happens at query time.
+- All stored geometry uses **EPSG:4326** (WGS 84 longitude/latitude), the coordinate system of the libraries, the OSM data and Leaflet. Stored geometry is never transformed at query time; the only query-time projection is inside `ST_Buffer` on `geography`, for the search circle.
 - The administrative-area file is in **EPSG:2157** (Irish Transverse Mercator) and includes Z values. The import checks that the file's declared CRS matches the manifest, removes the Z dimension, transforms to EPSG:4326 with GDAL, converts polygons to multipolygons and validates the result. The original SRID is kept in `source_srid`.
 - Two source boundaries are self-intersecting. They are imported only with the explicit `--repair-invalid` flag, which applies PostGIS `ST_MakeValid` and records the original validity reason in `source_attributes`.
 - Points are built as `Point(longitude, latitude, srid=4326)`. The API exposes plain `latitude` and `longitude` fields, so clients never deal with axis order.
@@ -113,7 +113,7 @@ Read from the running database (`pg_indexes`, `pg_constraint`):
 | `spaces_studyspace` | `spaces_studyspace_space_type_…` | B-tree on `space_type` | Type filter |
 | `spaces_studyspace` | `unique_study_space_source` | Unique (`source_dataset`, `source_id`) | No duplicate imports |
 | `spaces_studyspace` | `valid_study_space_type` | Check | Only `library` or `cafe` |
-| `spaces_administrativearea` | `spaces_administrativearea_boundary_…_id` | GiST on `boundary` | Spatial index for area queries |
+| `spaces_administrativearea` | `spaces_administrativearea_boundary_…_id` | GiST on `boundary` | Spatial index available to `ST_Intersects` and `ST_Covers` |
 | `spaces_administrativearea` | `unique_administrative_area_source` | Unique (`source_dataset`, `source_id`) | No duplicate imports |
 | both | `…_pkey`; `…_source_srid_check` | Primary key; check `source_srid >= 0` | |
 
@@ -131,9 +131,27 @@ All spatial queries are in [spaces/spatial.py](../spaces/spatial.py):
 | Nearest | The same distance annotation, ordered, `.first()` | `ST_DistanceSphere` with `LIMIT 1` |
 | Line to the nearest | `annotate(line_geojson=AsGeoJSON(MakeLine(point, "location")))` in the same query | `ST_MakeLine`, `ST_AsGeoJSON` |
 | Area counts | `filter(location__coveredby=Subquery(boundary))`, grouped by `space_type` | `ST_CoveredBy` |
+| Area containing a point | `filter(boundary__covers=point).first()` | `ST_Covers` |
+| Areas reached by a search (buffer and intersection) | `filter(boundary__intersects=GeodesicBuffer(point, radius))` | `ST_Intersects`, `ST_Buffer` on `point::geography`, cast back to `geometry` |
 | Boundary GeoJSON | `annotate(geojson=AsGeoJSON("boundary", precision=5))` | `ST_AsGeoJSON` |
 
 The same distance annotation is used to filter, order and report, so a returned `distance_m` never exceeds the requested radius. Type and facility filters are applied in the same query, before ordering.
+
+**Why the buffer goes through `geography`.** Boundaries are stored in degrees, and `ST_Buffer` on EPSG:4326 `geometry` would treat the radius as degrees. At Dublin's latitude a degree of longitude is about 66 km and a degree of latitude about 111 km, so such a "circle" would also be the wrong shape. With `geography`, the radius is in metres: PostGIS projects the point to a metric system that suits its location, buffers it there and projects the result back. The result is cast to `geometry` so that `ST_Intersects` can compare it with the stored boundaries. The circle is approximated by a polygon, so its edge can fall up to about 0.5% short of the radius. `test_spatial.py` checks this with fictional squares of known size, including one test where two squares are equally far away in degrees but only the closer one on the ground is reached.
+
+### PostGIS functions used
+
+| Function | Where | Purpose |
+| --- | --- | --- |
+| `ST_DistanceSphere` | `with_distance()` in `spatial.py`, through GeoDjango's `Distance` | Distance in metres for radius and nearest searches |
+| `ST_CoveredBy` | `area_coverage()` | Study spaces inside each area, including on its edge |
+| `ST_Covers` | `areas_around()`; location imports (`importers/common.py`) | The area containing a search point; keeping only imported points inside an area |
+| `ST_MakeLine` | `nearest_space()` | The line from the search point to the nearest match |
+| `ST_AsGeoJSON` | `nearest_space()`, `area_boundaries()` | Geometry as GeoJSON for Leaflet |
+| `ST_Buffer` | `GeodesicBuffer` in `spatial.py` | The search circle, in metres |
+| `ST_Intersects` | `areas_around()` | Areas that the search circle reaches |
+| `ST_Transform` | Not called by StudySmart's own code; called inside PostGIS's `ST_Buffer(geography, …)` | Projecting the search point to a metric system and back. Boundary files are transformed from ITM at import by GDAL, not PostGIS |
+| `ST_MakeValid` | `import_administrative_areas --repair-invalid`, with `ST_CollectionExtract` and `ST_Multi` | Explicit repair of the two self-intersecting source boundaries |
 
 ## Data import
 

@@ -35,6 +35,7 @@ class HomePageTests(TestCase):  # The page counts confirmed facilities, so it ne
         for attribute, route in (
             ("spaces", "studyspace-list"), ("nearby", "studyspace-nearby"),
             ("nearest", "studyspace-nearest"), ("areas", "area-list"), ("coverage", "area-coverage"),
+            ("intersecting", "area-intersecting"),
         ):
             self.assertContains(response, f'data-{attribute}-url="{reverse(f"spaces:{route}")}"')
         self.assertContains(response, f'<script type="module" src="{static("spaces/js/map.js")}">')

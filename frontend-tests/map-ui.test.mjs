@@ -342,6 +342,17 @@ async function run() {
     check("starting point text and pin", (await text("location-text")).includes("Trinity College Dublin")
         && await evaluate(`!!document.querySelector('.leaflet-marker-icon[title^="Starting point"]')`));
 
+    // The line under the summary names the areas PostGIS says this radius search reaches.
+    const areaLine = () => evaluate(`document.getElementById("results-areas").hidden ? "" : document.getElementById("results-areas").textContent`);
+    const areaLineShown = `!document.getElementById("results-areas").hidden`;
+    await waitFor(areaLineShown, 5000);
+    const areasTcd = await api(`/api/areas/intersecting/?lat=${TCD.lat}&lng=${TCD.lng}&radius=1000`);
+    const titleCase = (name) => name.toLowerCase().replace(/\b\w/g, (letter) => letter.toUpperCase());
+    const tcdLine = await areaLine();
+    check("area line names the containing area and the others reached",
+        tcdLine.startsWith(`You're in ${titleCase(areasTcd.containing_area?.name ?? "")}`)
+        && areasTcd.intersecting_areas.every((area) => tcdLine.includes(titleCase(area.name))), tcdLine);
+
     // Facility summaries: confirmed, confirmed absent and unknown, exactly as in the API.
     // A library with no known facility shows no facility list at all.
     check("card facility chips match true/false/unknown in the API", tcdCards.every((card, i) => {
@@ -433,8 +444,12 @@ async function run() {
     await waitFor(summaryStartsWith("No study spaces"));
     check("UCD shows its coverage note and an empty state with actions", await evaluate(`!document.getElementById("campus-note").hidden
         && !document.getElementById("results-actions").hidden`) && (await cards()).length === 0, await summary());
+    await waitFor(areaLineShown, 5000);
+    check("area line says when the starting point is outside the council area",
+        (await areaLine()).startsWith("This starting point is outside the Dublin City Council area"), await areaLine());
     await click("show-nearest");
     await waitFor(summaryIncludes("nearest match is"));
+    check("the nearest view has no area line", await areaLine() === "");
     const nearestUcd = await api(`/api/spaces/nearest/?lat=${UCD.lat}&lng=${UCD.lng}`);
     const nearestCards = await cards();
     check("show nearest match uses the nearest API and draws its PostGIS line", nearestCards.length === 1
@@ -519,6 +534,15 @@ async function run() {
     await waitFor(summaryStartsWith("Showing"));
     consoleErrors.splice(errorsBeforeFailure);
     check("search recovers and clears the error", !await evaluate(`!!document.querySelector("#map-messages .alert-danger")`));
+
+    // The area line only adds context, so its failure must not affect the search.
+    await send("Fetch.enable", {patterns: [{urlPattern: "*/api/areas/intersecting/*"}]});
+    await chooseCampus("ncad");
+    await waitFor(summaryStartsWith("Showing"));
+    await sleep(500);
+    check("a failed area request only hides the area line", (await cards()).length > 0 && await areaLine() === ""
+        && !await evaluate(`!!document.querySelector("#map-messages .alert-danger")`), await summary());
+    await send("Fetch.disable");
 
     await click("clear-location");
     await waitFor(summaryIncludes("match your filters"));

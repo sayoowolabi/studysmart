@@ -12,5 +12,6 @@ urlpatterns = [
     path("about/", views.about, name="about"),
     path("api/areas/", views.AreaBoundaryView.as_view(), name="area-list"),
     path("api/areas/coverage/", views.AreaCoverageView.as_view(), name="area-coverage"),
+    path("api/areas/intersecting/", views.AreaIntersectionView.as_view(), name="area-intersecting"),
     path("api/", include(router.urls)),
 ]

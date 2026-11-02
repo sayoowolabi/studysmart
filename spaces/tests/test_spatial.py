@@ -15,6 +15,7 @@ NEARBY_URL = reverse("spaces:studyspace-nearby")
 NEAREST_URL = reverse("spaces:studyspace-nearest")
 COVERAGE_URL = reverse("spaces:area-coverage")
 AREAS_URL = reverse("spaces:area-list")
+INTERSECTING_URL = reverse("spaces:area-intersecting")
 
 
 def setUpModule():
@@ -233,6 +234,114 @@ class CoverageTests(APITestCase):
 
     def test_coverage_is_read_only(self):
         self.assertEqual(self.client.post(COVERAGE_URL, {}).status_code, 405)
+
+
+class AreaIntersectionTests(APITestCase):
+    """
+    Distances at the origin's latitude: 0.02 degrees of latitude is about 2,226 m and
+    0.03 degrees is about 3,339 m; 0.03 degrees of longitude is only about 1,993 m and
+    0.01 degrees about 664 m. The buffer's edge can fall up to 0.5% short of the radius,
+    because PostGIS approximates the circle with a polygon, so radii stay clear of that.
+    """
+
+    def setUp(self):
+        make_area("Home", (-6.27, 53.34, -6.25, 53.36))
+
+    def areas(self, **params):
+        response = self.client.get(search(INTERSECTING_URL, **params))
+        self.assertEqual(response.status_code, 200)
+        return response.data
+
+    def names(self, **params):
+        return [area["name"] for area in self.areas(**params)["intersecting_areas"]]
+
+    def test_buffer_touching_or_short_of_a_neighbouring_area(self):
+        make_area("North", (-6.27, 53.37, -6.25, 53.38))  # Its edge is about 2,226 m north of the origin.
+        self.assertEqual(self.names(radius=2100), ["Home"])
+        self.assertEqual(self.names(radius=2350), ["Home", "North"])
+
+    def test_buffer_is_measured_in_metres_not_degrees(self):
+        # Both edges are 0.03 degrees away, but the eastern one is far closer on the ground.
+        make_area("East", (-6.23, 53.34, -6.22, 53.36))
+        make_area("North", (-6.27, 53.38, -6.25, 53.39))
+        self.assertEqual(self.names(radius=2500), ["East", "Home"])
+        self.assertEqual(self.names(radius=3500), ["East", "Home", "North"])
+
+    def test_response_shape_and_containing_area(self):
+        make_area("North", (-6.27, 53.37, -6.25, 53.38))
+        with self.assertNumQueries(2):  # one for the containing area, one for the intersections
+            data = self.areas(radius=2350)
+        home, north = AdministrativeArea.objects.order_by("name")
+        self.assertEqual(data, {
+            "containing_area": {"id": home.pk, "source_id": "home", "name": "Home"},
+            "intersecting_areas": [
+                {"id": home.pk, "source_id": "home", "name": "Home"},
+                {"id": north.pk, "source_id": "north", "name": "North"},
+            ],
+        })
+
+    def test_point_outside_every_area(self):
+        self.assertEqual(self.areas(lat=53.0, radius=1000), {"containing_area": None, "intersecting_areas": []})
+
+    def test_point_outside_can_still_reach_an_area(self):
+        # About 664 m east of Home's eastern edge.
+        self.assertEqual(self.names(lng=-6.24, radius=500), [])
+        data = self.areas(lng=-6.24, radius=800)
+        self.assertIsNone(data["containing_area"])
+        self.assertEqual([area["name"] for area in data["intersecting_areas"]], ["Home"])
+
+    def test_point_on_a_shared_border_reports_the_first_area_by_name(self):
+        make_area("Adjoining", (-6.25, 53.34, -6.23, 53.36))
+        data = self.areas(lng=-6.25, radius=100)
+        self.assertEqual(data["containing_area"]["name"], "Adjoining")
+        self.assertEqual([area["name"] for area in data["intersecting_areas"]], ["Adjoining", "Home"])
+
+    def test_intersection_uses_the_exact_polygon_not_its_bounding_box(self):
+        # An L-shaped area: the search point is in the empty notch of its bounding box.
+        l_shape = Polygon((
+            (-5.00, 53.00), (-4.90, 53.00), (-4.90, 53.05), (-4.95, 53.05),
+            (-4.95, 53.10), (-5.00, 53.10), (-5.00, 53.00),
+        ), srid=4326)
+        AdministrativeArea.objects.create(
+            name="L-Shape", source_id="l-shape", boundary=MultiPolygon(l_shape, srid=4326),
+        )
+        self.assertEqual(self.areas(lat=53.08, lng=-4.92, radius=100), {"containing_area": None, "intersecting_areas": []})
+
+    def test_extreme_valid_points_do_not_cause_errors(self):
+        for params in (
+            {"lat": 90, "lng": 0, "radius": 10000},
+            {"lat": -90, "lng": 180, "radius": 10000},
+            {"lat": 0, "lng": 180, "radius": 10000},
+            {"lat": 0, "lng": -180, "radius": 10000},
+            {"radius": 0.5},
+        ):
+            with self.subTest(params=params):
+                self.areas(**params)
+
+    def test_invalid_parameters_are_rejected(self):
+        for params, field in (
+            ({"lat": 91, "radius": 100}, "lat"),
+            ({"lng": -181, "radius": 100}, "lng"),
+            ({"lat": "nan", "radius": 100}, "lat"),
+            ({"lng": "inf", "radius": 100}, "lng"),
+            ({"radius": 0}, "radius"),
+            ({"radius": -5}, "radius"),
+            ({"radius": 10001}, "radius"),
+            ({"radius": "nan"}, "radius"),
+            ({}, "radius"),
+        ):
+            with self.subTest(params=params):
+                response = self.client.get(search(INTERSECTING_URL, **params))
+                self.assertEqual(response.status_code, 400)
+                self.assertIn(field, response.data)
+
+    def test_missing_coordinates_are_rejected(self):
+        response = self.client.get(INTERSECTING_URL + "?radius=100")
+        self.assertEqual(response.status_code, 400)
+        self.assertEqual(set(response.data), {"lat", "lng"})
+
+    def test_endpoint_is_read_only(self):
+        self.assertEqual(self.client.post(INTERSECTING_URL, {}).status_code, 405)
 
 
 class AreaBoundaryTests(APITestCase):

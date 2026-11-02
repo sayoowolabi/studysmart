@@ -416,6 +416,12 @@ body.app {
     color: var(--ss-text-muted);
 }
 
+/* :not([hidden]), because display: block here would otherwise override the hidden attribute. */
+.results-areas:not([hidden]) {
+    display: block;
+    margin-top: 0.25rem;
+}
+
 .result-list {
     list-style: none;
     margin: 0;

@@ -132,8 +132,10 @@
 
             <section class="panel-results step" aria-labelledby="results-heading">
                 <h2 id="results-heading" class="step-title"><span class="step-number" aria-hidden="true">3</span>Nearby study spaces</h2>
+                {# One live region: the area line is inside it, so a screen reader announces both. #}
                 <p id="results-summary" class="results-summary" role="status" aria-live="polite">
-                    Choose a starting point to see the nearest study spaces.
+                    <span id="results-summary-text">Choose a starting point to see the nearest study spaces.</span>
+                    <span id="results-areas" class="results-areas" hidden></span>
                 </p>
                 <ol id="results-list" class="result-list"></ol>
                 <div id="results-actions" class="results-actions" hidden>
@@ -175,7 +177,8 @@
                  data-nearby-url="{% url 'spaces:studyspace-nearby' %}"
                  data-nearest-url="{% url 'spaces:studyspace-nearest' %}"
                  data-areas-url="{% url 'spaces:area-list' %}"
-                 data-coverage-url="{% url 'spaces:area-coverage' %}"></div>
+                 data-coverage-url="{% url 'spaces:area-coverage' %}"
+                 data-intersecting-url="{% url 'spaces:area-intersecting' %}"></div>
 
             <!-- Visual loading and error messages from status.js. Not a live region: the results summary
                  announces search progress, and map-level warnings are announced individually as alerts. -->
