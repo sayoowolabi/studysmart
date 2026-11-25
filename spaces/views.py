@@ -9,6 +9,7 @@ from rest_framework.response import Response
 from rest_framework.views import APIView
 
 from .models import FACILITY_FIELDS, StudySpace
+from .pagination import StudySpacePagination
 from .serializers import (
     NearbyQuerySerializer, PointQuerySerializer, StudySpaceDistanceSerializer,
     StudySpaceNearestSerializer, StudySpaceSerializer,
@@ -121,6 +122,7 @@ class StudySpaceViewSet(viewsets.ModelViewSet):
 
     queryset = StudySpace.objects.all()
     serializer_class = StudySpaceSerializer
+    pagination_class = StudySpacePagination  # Applies to the list action only.
     http_method_names = ["get", "post", "patch", "delete", "head", "options"]
 
     def get_queryset(self):

@@ -112,7 +112,7 @@ The local setup already serves the site through Nginx and Gunicorn, but it is de
 4. **HTTPS and Django settings:** add a TLS certificate to Nginx, publish it on port 443, and set `DJANGO_ALLOWED_HOSTS` to the public domain and `DJANGO_HTTPS=True`. That one setting turns on the HTTPS redirect, HSTS, secure-only cookies, `CSRF_TRUSTED_ORIGINS` for the allowed hosts and `SECURE_PROXY_SSL_HEADER`, which reads the `X-Forwarded-Proto` header that Nginx sets. If a load balancer ends TLS in front of Nginx instead, Nginx must pass on the load balancer's header rather than its own `$scheme`, or the redirect would loop.
 5. **Secrets:** store them in the platform's secret manager instead of a `.env` file.
 6. **Release process:** build the image in CI, run `migrate` as a one-off release step, run the imports once, and promote the image only when CI is green.
-7. **Operations:** do not expose pgAdmin publicly; add logging and monitoring, and consider rate limiting and pagination for the public API.
+7. **Operations:** do not expose pgAdmin publicly; add logging and monitoring. Pagination and rate limiting are already in place (see [api.md](api.md#pagination-and-rate-limits)).
 8. **Map tiles:** OpenStreetMap's public tile servers are not intended for heavy production traffic; use a commercial or self-hosted tile service at scale.
 
 (This document was made with assistance from OpenAI Codex)

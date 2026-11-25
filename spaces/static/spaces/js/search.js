@@ -6,7 +6,7 @@
  * 2. Filters: radius, number of results, type and confirmed café facilities.
  * 3. The nearest matches (10 by default) appear as numbered cards and matching numbered markers.
  * Every change re-runs the search automatically, always with the same filters:
- *   no starting point     - every matching space        GET /api/spaces/?filters
+ *   no starting point     - every matching space        GET /api/spaces/?filters&page_size=1000 (all pages)
  *   starting point        - matches within the radius   GET /api/spaces/nearby/?lat&lng&radius&filters
  *                           and the areas it reaches    GET /api/areas/intersecting/?lat&lng&radius
  *   "Show nearest match"  - the closest match anywhere  GET /api/spaces/nearest/?lat&lng&filters
@@ -285,6 +285,24 @@ async function fetchLatest(url) {
     return data;
 }
 
+/*
+ * The list endpoint is paginated. Asks for the largest page (usually one request for the
+ * whole dataset) and follows the "next" links until every page has been read.
+ */
+async function fetchAllPages(url) {
+    const spaces = [];
+    let pageUrl = url;
+    while (pageUrl) {
+        const page = await fetchLatest(pageUrl);
+        spaces.push(...page.results);
+        // Keep only path and query: the absolute "next" URL is built by Django behind the
+        // proxy, and the page's own origin is always the right one to request.
+        const next = page.next ? new URL(page.next) : null;
+        pageUrl = next ? `${next.pathname}${next.search}` : null;
+    }
+    return spaces;
+}
+
 async function runSearch() {
     updateFilterSummary();
     showActions(false);
@@ -324,7 +342,9 @@ function showLoading(text) {
 
 async function showAllSpaces() {
     setStatus("Loading study spaces…", "info");
-    const spaces = await fetchLatest(`${state.urls.spacesUrl}?${filterParams()}`);
+    const params = filterParams();
+    params.set("page_size", "1000");
+    const spaces = await fetchAllPages(`${state.urls.spacesUrl}?${params}`);
     clearStatus();
     display(spaces);
     clearResults();

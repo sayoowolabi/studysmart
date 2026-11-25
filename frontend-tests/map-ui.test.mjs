@@ -322,9 +322,9 @@ async function run() {
 
     // Before a starting point: every matching space, no result cards.
     await waitFor(summaryIncludes("match your filters"));
-    const all = await api("/api/spaces/");
-    check("all-spaces view before a starting point", (await markers()).length === all.length && (await cards()).length === 0,
-        `${(await markers()).length} markers, API ${all.length}`);
+    const all = await api("/api/spaces/");  // Paginated: "count" is the total across all pages.
+    check("all-spaces view before a starting point", (await markers()).length === all.count && (await cards()).length === 0,
+        `${(await markers()).length} markers, API ${all.count}`);
 
     await evaluate("document.fonts.ready.then(() => true)");
     check("self-hosted Nunito font loaded", await evaluate(`document.fonts.check('16px "Nunito"')
@@ -552,8 +552,8 @@ async function run() {
     await waitFor(summaryIncludes("match your filters"));
     const clearedMarkers = (await markers()).length;
     const clearedCards = (await cards()).length;
-    check("clear returns to all spaces", clearedMarkers === all.length && clearedCards === 0,
-        `${clearedMarkers} markers, API ${all.length}, ${clearedCards} cards; ${await summary()}`);
+    check("clear returns to all spaces", clearedMarkers === all.count && clearedCards === 0,
+        `${clearedMarkers} markers, API ${all.count}, ${clearedCards} cards; ${await summary()}`);
 
     // Responsive layouts.
     for (const [name, width, height, mobile] of [["desktop", 1366, 900, false], ["tablet", 768, 1024, true], ["phone", 390, 844, true]]) {

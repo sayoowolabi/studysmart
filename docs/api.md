@@ -36,6 +36,25 @@ Authentication uses Django sessions: log in at `/admin/`, then use the browsable
 
 `PUT` is not offered (405); use `PATCH`. The area endpoints are read-only.
 
+## Pagination and rate limits
+
+**Pagination.** Only `GET /api/spaces/` is paginated: 100 records per page by default, up to 1000 with `?page_size=`, pages chosen with `?page=`. The search endpoints (`nearby`, `nearest`) and the area endpoints are not paginated, because the radius and the map's result count already limit their size. A paginated response looks like this:
+
+```json
+{"count": 657, "next": "http://localhost:8000/api/spaces/?page=2", "previous": null, "results": [ ... ]}
+```
+
+The map page requests `page_size=1000` and follows `next` until it reaches the last page, so it always shows every matching record.
+
+**Rate limits.** Every endpoint is limited, counted per client address:
+
+| Who | Limit | Applies to |
+| --- | --- | --- |
+| Visitors (not logged in) | 300 requests per minute | Every request |
+| Logged-in users | 60 requests per minute | `POST`, `PATCH`, `DELETE` only |
+
+Over the limit, the API answers `429 Too Many Requests` with a `Retry-After` header. Behind Nginx, Django reads the visitor's address from the `X-Forwarded-For` header Nginx adds (`NUM_PROXIES = 1`), so each visitor has their own limit. Counters are kept in a file cache shared by the Gunicorn worker processes.
+
 ---
 
 ### GET /api/
@@ -93,7 +112,7 @@ The search endpoints add `distance_m` (metres, one decimal place). The raw `sour
 
 ### GET /api/spaces/
 
-Lists all study spaces, ordered by name. Not paginated.
+Lists study spaces, ordered by name, 100 per page (see [Pagination and rate limits](#pagination-and-rate-limits)). Add `page` and `page_size` (up to 1000) to choose the page. Filters apply before pagination, so `count` is the number of matching records.
 
 | Query parameter | Values | Effect |
 | --- | --- | --- |
@@ -308,6 +327,8 @@ Validation errors use DRF's standard shape, `{"field": ["message"]}`; other erro
 | 403 | Not logged in, missing permission or missing CSRF token | `{"detail": "Authentication credentials were not provided."}` |
 | 404 | Unknown ID, or no nearest match | `{"detail": "No StudySpace matches the given query."}`, `{"detail": "No study space matches these filters."}` |
 | 405 | `PUT`, or any write to a read-only endpoint | `{"detail": "Method \"PUT\" not allowed."}` |
+| 404 | Page past the end of the list | `{"detail": "Invalid page."}` |
+| 429 | Rate limit exceeded | `{"detail": "Request was throttled. Expected available in 42 seconds."}` |
 | 409 | Deleting an imported record | `{"detail": "Imported records cannot be deleted because the next import would recreate them. Only manually created records can be deleted."}` |
 
 Latitude, longitude and radius also reject `NaN` and infinity. Unknown query parameters are ignored.

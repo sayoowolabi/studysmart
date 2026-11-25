@@ -39,4 +39,4 @@ class CampusSelectorTests(TestCase):
     def test_campuses_are_search_origins_not_study_spaces(self):
         self.client.get(reverse("spaces:home"))
         self.assertFalse(StudySpace.objects.exists())
-        self.assertEqual(self.client.get(reverse("spaces:studyspace-list")).data, [])
+        self.assertEqual(self.client.get(reverse("spaces:studyspace-list")).data["results"], [])
