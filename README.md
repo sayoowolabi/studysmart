@@ -36,6 +36,7 @@ It is an individual project for the Advanced Web Mapping / Location-Based Servic
 - Popups with address, distance and indoor seating, outdoor seating and Wi-Fi as Yes / No / **Unknown**, plus source and licence. Libraries show no facility list, because the library dataset records none.
 - Optional administrative-area boundary overlay and a table of **library and café counts per area**.
 - An **About** page (linked from the header) explaining who StudySmart is for, how to use it and where its data comes from.
+- **Installable Progressive Web App**: a web app manifest and icons, and a service worker that caches the app shell so the map and About pages open without a connection (an offline page covers anything not saved). See [docs/decisions.md](docs/decisions.md#23-progressive-web-app-shell-27-november-2026).
 - Responsive layout (desktop, tablet, phone), keyboard-accessible controls, loading, empty and error states, and clear geolocation error messages.
 
 **Spatial operations (PostGIS, via GeoDjango)**
@@ -66,12 +67,12 @@ It is an individual project for the Advanced Web Mapping / Location-Based Servic
 | Database | PostgreSQL 17 with PostGIS 3.6 (`postgis/postgis:17-3.6` image) |
 | Backend | Python 3.12, Django 5.2 LTS with GeoDjango, Django REST Framework 3.18, Psycopg 3 |
 | Spatial libraries | GDAL, GEOS and PROJ (inside the Django container) |
-| Frontend | Django template, Leaflet 1.9.4, OpenStreetMap tiles, Bootstrap 5.3 (CSS), native JavaScript ES modules (no build step), self-hosted Nunito font |
+| Frontend | Django template, Leaflet 1.9.4, OpenStreetMap tiles, Bootstrap 5.3 (CSS), native JavaScript ES modules (no build step), self-hosted Nunito font, Leaflet and Bootstrap; web app manifest and service worker (PWA) |
 | Web serving | Nginx 1.30 (reverse proxy and static files) in front of Gunicorn 26 (WSGI server) |
 | Deployment | Docker Compose: Nginx, Django, PostGIS and pgAdmin 4 services on a private network with named volumes |
 | Quality | Django test runner against PostGIS, browser tests (Node 22 and headless Chrome/Edge, no npm packages), GitHub Actions |
 
-Exact dependency versions are pinned in [requirements.txt](requirements.txt), [docker-compose.yml](docker-compose.yml), [Dockerfile](Dockerfile) and the template's CDN links (with Subresource Integrity hashes).
+Exact dependency versions are pinned in [requirements.txt](requirements.txt), [docker-compose.yml](docker-compose.yml), [Dockerfile](Dockerfile) and the self-hosted Leaflet and Bootstrap files in `spaces/static/spaces/vendor/` (identical to the published files; their hashes are recorded in [docs/decisions.md](docs/decisions.md)).
 
 ## Architecture
 
@@ -111,13 +112,14 @@ studysmart/              Django project: settings and root URLs
 spaces/                  Django app
   models.py              StudySpace and AdministrativeArea (PostGIS geometry)
   serializers.py         API representation and validation
-  views.py               Map and About pages, REST API views and filters
+  views.py               Map, About and offline pages, manifest, service worker, REST API views and filters
+  pwa.py                 Files the service worker caches, and the cache version
   spatial.py             All spatial queries (radius, nearest, containment, buffer, GeoJSON)
   universities.py        Campus starting points (OpenStreetMap-sourced)
   validators.py          Geometry validation shared by API, admin and imports
   admin.py               Django admin with map widgets
   importers/, management/commands/   Snapshot import commands
-  templates/, static/    Map and About pages, JavaScript modules, CSS and font
+  templates/, static/    Pages, service worker, JavaScript modules, CSS, font, icons and vendored Leaflet/Bootstrap
   tests/                 Django tests and synthetic import fixtures
 data/                    Source snapshots, checksums manifest and stable identity maps
 nginx/default.conf       Reverse proxy, static files and security headers
@@ -213,7 +215,7 @@ Single-quote values in `.env` that contain `$` or `#`. Do not share the generate
 
 | Suite | Size | Command |
 | --- | --- | --- |
-| Django tests (models, API, permissions, spatial queries, imports, settings, page) against a separate PostGIS test database | 164 tests | `docker compose exec web /usr/local/bin/python manage.py test spaces` |
+| Django tests (models, API, permissions, spatial queries, imports, settings, page) against a separate PostGIS test database | 179 tests | `docker compose exec web /usr/local/bin/python manage.py test spaces` |
 | Browser tests of the map page (needs Node 22+ and Chrome, Chromium or Edge; the app running with data imported) | 50 checks | `node frontend-tests/map-ui.test.mjs` |
 | System and migration checks | | `docker compose exec web /usr/local/bin/python manage.py check` and `… makemigrations --check --dry-run` |
 
@@ -246,6 +248,9 @@ Parameters, example requests and responses, validation rules and every error sta
 | Campus starting points | © OpenStreetMap contributors (element IDs recorded in `spaces/universities.py`) | ODbL 1.0 |
 | Map tiles | © OpenStreetMap contributors, OpenStreetMap tile server | Attribution required; [tile usage policy](https://operations.osmfoundation.org/policies/tiles/) |
 | Nunito font | The Nunito Project Authors (`spaces/static/spaces/fonts/OFL.txt`) | SIL Open Font License 1.1 |
+| Leaflet 1.9.4 (self-hosted) | Volodymyr Agafonkin and contributors (`spaces/static/spaces/vendor/leaflet/LICENSE`) | BSD 2-Clause |
+| Bootstrap 5.3.3 CSS (self-hosted) | The Bootstrap Authors (`spaces/static/spaces/vendor/bootstrap/LICENSE`) | MIT |
+| App icon | Drawn for StudySmart (`spaces/static/spaces/icons/icon.svg`) | Part of this project |
 
 The exact snapshots used are committed in `data/raw/` with SHA-256 checksums, retrieval times and licences in `data/source-manifest.json`. Source choices, facility-tag mapping, identity handling and data-quality limitations are documented in **[docs/data-sources.md](docs/data-sources.md)**.
 
@@ -265,6 +270,8 @@ The exact snapshots used are committed in `data/raw/` with SHA-256 checksums, re
 - Choosing an arbitrary map point needs a pointer or touch; keyboard users can choose a campus, their location or a marker.
 - Geolocation needs a secure origin, so it works on `localhost` but not when the site is opened from another device over plain HTTP.
 - Rate limits are counted per client address, so several people behind one shared network address (for example campus Wi-Fi) share one limit of 300 requests per minute.
+- Offline, the map has no background: OpenStreetMap tiles are not cached, because the [tile usage policy](https://operations.osmfoundation.org/policies/tiles/) does not allow bulk or offline caching. New searches need a connection, because PostGIS on the server does the spatial work.
+- The service worker and installing the app need HTTPS or `localhost`; from another device over plain HTTP the site works as a normal web page.
 - The local setup is served over plain HTTP on `localhost`; see [Deployment beyond local development](#deployment-beyond-local-development).
 
 **Possible improvements:** facility reports from users with moderation; opening hours from OpenStreetMap; wider coverage beyond Dublin City Council; a geography column or projected index for index-assisted radius searches at larger scale; and a production deployment as outlined in [docs/deployment.md](docs/deployment.md#production-and-cloud-deployment).

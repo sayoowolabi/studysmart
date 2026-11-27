@@ -10,7 +10,7 @@ function list() {
     return document.getElementById("results-list");
 }
 
-/* Renders one card per space; onSelect(space) runs when a card is clicked. */
+/* Renders one card per space. onSelect(space) runs when a card is clicked. */
 export function renderResults(spaces, onSelect) {
     list().replaceChildren(...spaces.map((space, index) => resultCard(space, index + 1, onSelect)));
 }
@@ -87,7 +87,7 @@ function thumbnail(spaceType) {
 
 /*
  * Confirmed facilities as green chips, confirmed absences as grey "No …" chips.
- * Unknown values are never shown as yes or no: they are only counted.
+ * Unknown values are never shown as yes or no. They are only counted.
  */
 function facilitySummary(space) {
     const container = document.createElement("span");

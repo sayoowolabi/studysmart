@@ -35,7 +35,7 @@ class StudySpaceAdmin(GISModelAdmin):
     readonly_fields = (*SOURCE_READONLY, "location_method", "facility_verified_at")
 
     def get_readonly_fields(self, request, obj=None):
-        # Matches the API: the next import would silently overwrite these edits.
+        # Same rule as the API. The next import would silently overwrite these edits.
         if obj is not None and obj.is_imported:
             return (*self.readonly_fields, *SOURCE_OWNED_FIELDS)
         return self.readonly_fields

@@ -76,7 +76,7 @@ class NearbyTests(APITestCase):
         self.assertEqual([item["name"] for item in response.data], ["Seated Cafe"])
 
     def test_combined_facility_filters_require_every_facility_confirmed(self):
-        # The map sends several facility filters at once; they must combine with AND.
+        # The map sends several facility filters at once. They must combine with AND.
         make_space("Seated Wi-Fi Cafe", ORIGIN_LAT + 0.002, indoor_seating=True, has_wifi=True)
         make_space("Seated Unknown Wi-Fi Cafe", ORIGIN_LAT + 0.003, indoor_seating=True)
         make_space("Seated No Wi-Fi Cafe", ORIGIN_LAT + 0.004, indoor_seating=True, has_wifi=False)
@@ -95,7 +95,7 @@ class NearbyTests(APITestCase):
         make_space("Standing Cafe", ORIGIN_LAT + 0.003, indoor_seating=False)
         make_space("Far Unknown Cafe", ORIGIN_LAT + 0.05)  # about 5.6 km away
         names = lambda **filters: [i["name"] for i in self.client.get(search(NEARBY_URL, radius=2000, **filters)).data]
-        # Unknown matches only NULL: not the confirmed or "no" seating, and nothing beyond the radius.
+        # Unknown matches only NULL. It excludes confirmed and "no" seating, and anything beyond the radius.
         self.assertEqual(names(indoor_seating="unknown"), ["Origin Library", "Unknown-Seat Cafe"])
         self.assertEqual(names(type="cafe", indoor_seating="unknown"), ["Unknown-Seat Cafe"])
         self.assertEqual(names(type="cafe", indoor_seating="false"), ["Standing Cafe"])
@@ -147,8 +147,8 @@ class NearestTests(APITestCase):
     def test_nearest_includes_the_postgis_line_from_the_search_point(self):
         line = self.client.get(search(NEAREST_URL)).data["line"]
         self.assertEqual(line["type"], "LineString")
-        # GeoJSON order is [longitude, latitude]: from the search point to the nearest space,
-        # rounded to 6 decimal places (about 0.1 m).
+        # GeoJSON order is [longitude, latitude]. The line runs from the search point to the
+        # nearest space, rounded to 6 decimal places (about 0.1 m).
         self.assertEqual(line["coordinates"], [[ORIGIN_LNG, ORIGIN_LAT], [ORIGIN_LNG, round(ORIGIN_LAT + 0.005, 6)]])
 
     def test_filters_apply_before_choosing_nearest(self):
@@ -196,7 +196,7 @@ class CoverageTests(APITestCase):
             area["name"]: (area["library_count"], area["cafe_count"], area["total_count"])
             for area in response.data
         }
-        # The border café is covered by both squares; the outside café by neither.
+        # The border café is covered by both squares. The outside café is covered by neither.
         self.assertEqual(counts, {"West": (1, 2, 3), "East": (0, 2, 2)})
         self.assertEqual([area["name"] for area in response.data], ["East", "West"])
         self.assertEqual(
@@ -205,7 +205,7 @@ class CoverageTests(APITestCase):
         )
 
     def test_containment_uses_the_exact_polygon_not_its_bounding_box(self):
-        # An L-shaped area: its bounding box includes the empty top-right notch.
+        # An L-shaped area. Its bounding box includes the empty top-right notch.
         l_shape = Polygon((
             (-5.00, 53.00), (-4.90, 53.00), (-4.90, 53.05), (-4.95, 53.05),
             (-4.95, 53.10), (-5.00, 53.10), (-5.00, 53.00),
@@ -215,7 +215,7 @@ class CoverageTests(APITestCase):
         )
         make_space("Lower Arm Cafe", 53.02, -4.92)
         make_space("Upper Arm Library", 53.08, -4.98, space_type="library")
-        make_space("Corner Cafe", 53.00, -5.00)           # on a vertex: covered
+        make_space("Corner Cafe", 53.00, -5.00)           # on a corner, so covered
         make_space("Notch Cafe", 53.08, -4.92)            # inside the bounding box only
         make_space("Just Outside Cafe", 53.02, -5.00001)  # about 0.7 m west of the edge
         area = next(a for a in self.client.get(COVERAGE_URL).data if a["name"] == "L-Shape")
@@ -238,10 +238,10 @@ class CoverageTests(APITestCase):
 
 class AreaIntersectionTests(APITestCase):
     """
-    Distances at the origin's latitude: 0.02 degrees of latitude is about 2,226 m and
-    0.03 degrees is about 3,339 m; 0.03 degrees of longitude is only about 1,993 m and
-    0.01 degrees about 664 m. The buffer's edge can fall up to 0.5% short of the radius,
-    because PostGIS approximates the circle with a polygon, so radii stay clear of that.
+    Distances at the origin's latitude. 0.02 degrees of latitude is about 2,226 m and
+    0.03 degrees is about 3,339 m. 0.03 degrees of longitude is only about 1,993 m and
+    0.01 degrees is about 664 m. The buffer's edge can fall up to 0.5% short of the radius,
+    because PostGIS draws the circle as a polygon, so the test radii stay clear of that.
     """
 
     def setUp(self):
@@ -297,7 +297,7 @@ class AreaIntersectionTests(APITestCase):
         self.assertEqual([area["name"] for area in data["intersecting_areas"]], ["Adjoining", "Home"])
 
     def test_intersection_uses_the_exact_polygon_not_its_bounding_box(self):
-        # An L-shaped area: the search point is in the empty notch of its bounding box.
+        # An L-shaped area. The search point is in the empty notch of its bounding box.
         l_shape = Polygon((
             (-5.00, 53.00), (-4.90, 53.00), (-4.90, 53.05), (-4.95, 53.05),
             (-4.95, 53.10), (-5.00, 53.10), (-5.00, 53.00),
@@ -362,7 +362,7 @@ class AreaBoundaryTests(APITestCase):
         self.assertEqual(west["type"], "Feature")
         self.assertEqual(west["properties"], {"source_id": "west", "name": "West"})
         self.assertEqual(west["geometry"]["type"], "MultiPolygon")
-        # GeoJSON positions are [longitude, latitude]: Dublin is about [-6.3, 53.3], not [53.3, -6.3].
+        # GeoJSON positions are [longitude, latitude]. Dublin is about [-6.3, 53.3], not [53.3, -6.3].
         ring = west["geometry"]["coordinates"][0][0]
         self.assertEqual(ring[0], ring[-1])
         self.assertEqual(

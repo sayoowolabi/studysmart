@@ -4,19 +4,17 @@
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>StudySmart · Dublin study spaces</title>
-    <!-- Pinned CDN versions; integrity hashes make the browser reject altered files. -->
-    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css"
-          integrity="sha384-QWTKZyjpPEjISv5WaRU9OFeRpok6YctnYmDr5pNlyT2bRjXh0JMhjY6hW+ALEwIH" crossorigin="anonymous">
-    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
-          integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin="anonymous">
+    {% include "spaces/includes/head_assets.html" %}
+    <!-- Leaflet 1.9.4 is served from this site (BSD-2 licence in vendor/leaflet/LICENSE). -->
+    <link rel="stylesheet" href="{% static 'spaces/vendor/leaflet/leaflet.css' %}">
     <link rel="stylesheet" href="{% static 'spaces/css/map.css' %}">
     <!-- Leaflet runs first (deferred scripts and modules run in document order). -->
-    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" defer
-            integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin="anonymous"></script>
+    <script src="{% static 'spaces/vendor/leaflet/leaflet.js' %}" defer></script>
     <script type="module" src="{% static 'spaces/js/map.js' %}"></script>
+    <script type="module" src="{% static 'spaces/js/pwa.js' %}"></script>
 </head>
-<body class="app">
-    <!-- Icons drawn for StudySmart; used by <use href="#…">. Card thumbnails are illustrations, not photos. -->
+<body class="app" data-sw-url="{% url 'spaces:service-worker' %}">
+    <!-- Icons drawn for StudySmart and used by <use href="#…">. Card thumbnails are illustrations, not photos. -->
     <svg xmlns="http://www.w3.org/2000/svg" hidden>
         <symbol id="icon-library" viewBox="0 0 24 24"><path d="M4 19.5V5a2 2 0 0 1 2-2h13v16H6a2 2 0 0 0-2 2.5Z M4 19.5A2 2 0 0 0 6 21h13 M8 7h7 M8 11h5"/></symbol>
         <symbol id="icon-cafe" viewBox="0 0 24 24"><path d="M4 9h12v5a5 5 0 0 1-5 5H9a5 5 0 0 1-5-5V9Z M16 10h1.5a2.5 2.5 0 0 1 0 5H16 M8 3.5v2.5 M12 3.5v2.5"/></symbol>
@@ -35,7 +33,7 @@
     </header>
 
     <main class="app-layout">
-        <!-- On large screens .panel is the left column; on smaller screens its two parts stack around the map. -->
+        <!-- On large screens .panel is the left column. On smaller screens its two parts stack around the map. -->
         <div class="panel">
             <div class="panel-controls">
                 <section class="step" aria-labelledby="step-location">
@@ -66,7 +64,7 @@
                 </section>
 
                 <form id="search-form" class="step" aria-labelledby="step-filters">
-                    <!-- Open on large screens; search.js closes it on phones and tablets to keep the map in view. -->
+                    <!-- Open on large screens. search.js closes it on phones and tablets to keep the map in view. -->
                     <details id="filters-details" class="filters" open>
                     <summary class="filters-summary">
                         <h2 id="step-filters" class="step-title mb-0"><span class="step-number" aria-hidden="true">2</span>Filters</h2>
@@ -108,7 +106,7 @@
                         <legend class="filter-legend">Filter cafés</legend>
                         <div class="chip-row">
                             {% for facility in facility_filters %}
-                            {# Café counts come from the database when the page loads; a facility no café confirms is disabled. #}
+                            {# Café counts come from the database when the page loads. A facility that no café confirms is disabled. #}
                             <input class="btn-check" type="checkbox" name="facility" value="{{ facility.field }}"
                                    id="facility-{{ facility.field }}"{% if facility.confirmed == 0 %} disabled{% endif %}>
                             <label class="btn chip" for="facility-{{ facility.field }}">
@@ -132,7 +130,7 @@
 
             <section class="panel-results step" aria-labelledby="results-heading">
                 <h2 id="results-heading" class="step-title"><span class="step-number" aria-hidden="true">3</span>Nearby study spaces</h2>
-                {# One live region: the area line is inside it, so a screen reader announces both. #}
+                {# One live region. The area line is inside it, so a screen reader announces both. #}
                 <p id="results-summary" class="results-summary" role="status" aria-live="polite">
                     <span id="results-summary-text">Choose a starting point to see the nearest study spaces.</span>
                     <span id="results-areas" class="results-areas" hidden></span>
@@ -180,8 +178,8 @@
                  data-coverage-url="{% url 'spaces:area-coverage' %}"
                  data-intersecting-url="{% url 'spaces:area-intersecting' %}"></div>
 
-            <!-- Visual loading and error messages from status.js. Not a live region: the results summary
-                 announces search progress, and map-level warnings are announced individually as alerts. -->
+            <!-- Visual loading and error messages from status.js. This is not a live region because the results
+                 summary announces search progress, and map warnings are announced one by one as alerts. -->
             <div id="map-messages" class="map-messages">
                 <div id="choose-banner" class="alert alert-primary choose-banner" hidden>
                     <span>Tap the map or a study-space marker to set your starting point.</span>

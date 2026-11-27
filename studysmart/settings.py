@@ -27,8 +27,8 @@ ALLOWED_HOSTS = [
     if host.strip()
 ]
 
-# HTTPS hardening for a deployment served over HTTPS (behind Nginx or a load balancer that
-# sets X-Forwarded-Proto). Off by default because the local stack is plain http://localhost.
+# Extra security for a deployment served over HTTPS, behind Nginx or a load balancer that
+# sets X-Forwarded-Proto. It is off by default because the local stack uses plain http://localhost.
 https_value = os.environ.get("DJANGO_HTTPS", "False").strip().lower()
 if https_value not in {"true", "false"}:
     raise ImproperlyConfigured("DJANGO_HTTPS must be True or False.")
@@ -110,12 +110,12 @@ STATIC_URL = "static/"
 STATIC_ROOT = BASE_DIR / "staticfiles"
 DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
 
-# Session login (via /admin/) keeps Django's CSRF protection; Basic auth would send
+# Session login (through /admin/) keeps Django's CSRF protection. Basic auth would send
 # passwords with every request over the local stack's plain HTTP.
 REST_FRAMEWORK = {
     "DEFAULT_AUTHENTICATION_CLASSES": ["rest_framework.authentication.SessionAuthentication"],
     "DEFAULT_PERMISSION_CLASSES": ["rest_framework.permissions.DjangoModelPermissionsOrAnonReadOnly"],
-    # Anonymous visitors: any request; logged-in users: writes only (see spaces/throttling.py).
+    # Visitors are limited on every request. Logged-in users are limited on writes only (see spaces/throttling.py).
     "DEFAULT_THROTTLE_CLASSES": [
         "rest_framework.throttling.AnonRateThrottle",
         "spaces.throttling.WriteRateThrottle",
@@ -123,15 +123,15 @@ REST_FRAMEWORK = {
     # Generous enough for normal map use (a few requests per search) and the browser tests.
     "DEFAULT_THROTTLE_RATES": {"anon": "300/min", "write": "60/min"},
     # Nginx is the one proxy in front of Django, so the client's own address is the last
-    # entry it adds to X-Forwarded-For; without this every visitor would share Nginx's address.
+    # entry it adds to X-Forwarded-For. Without this, every visitor would share Nginx's address.
     "NUM_PROXIES": 1,
 }
 
 # Throttle counters live in Django's cache. Gunicorn runs three worker processes, and a
 # per-process memory cache would count each visitor's requests separately in each one, so
 # the counters use a file cache inside the container that all workers share.
-# The test run uses a dummy cache (nothing is stored, so nothing is throttled) so tests
-# stay independent of each other; the throttling tests switch to a memory cache explicitly.
+# Tests use a dummy cache that stores nothing, so nothing is throttled and tests stay
+# independent of each other. The throttling tests switch to a memory cache themselves.
 TESTING = len(sys.argv) > 1 and sys.argv[1] == "test"
 CACHES = {
     "default": {"BACKEND": "django.core.cache.backends.dummy.DummyCache"} if TESTING else {

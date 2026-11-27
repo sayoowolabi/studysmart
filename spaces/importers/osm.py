@@ -1,10 +1,10 @@
 # AI assistance (Claude): added the mapping of OSM tags to true/false/unknown facilities, keeping conflicting, conditional and unsupported tags unknown.
-"""Conservative OSM facility mappings; see docs/data-sources.md for semantics."""
+"""Careful mapping of OSM tags to facility values. See docs/data-sources.md for the rules."""
 OUTDOOR_POSITIVE = {
     "yes", "parklet", "pedestrian_zone", "street", "sidewalk", "patio", "terrace",
     "balcony", "veranda", "roof", "garden", "beach", "courtyard", "separate",
 }
-# bs1363 is OSM's key for the Irish/UK domestic socket (IEC type G), the usual Dublin outlet.
+# bs1363 is OSM's key for the Irish and UK plug socket (type G), the usual outlet in Dublin.
 MAINS_SOCKET_TYPES = {
     "typea", "typeb", "typec", "typed", "typee", "typef", "typeg", "typeh",
     "typei", "typej", "typek", "typel", "typem", "typen", "typeo", "schuko", "bs1363",
@@ -57,7 +57,7 @@ def parse_facilities(tags):
             internet_value = False
         elif "wlan" in internet:
             internet_value = True
-        # Generic internet access and wired/terminal access do not establish Wi-Fi.
+        # General internet access, wired access or terminals do not prove there is Wi-Fi.
     values["has_wifi"] = combine([internet_value, boolean("wifi", {"yes", "free"})], "has_wifi")
     if len(issues) > wifi_issue_start:
         values["has_wifi"] = None

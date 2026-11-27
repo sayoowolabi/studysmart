@@ -6,13 +6,13 @@
 // needed. Expected values are read from the running API, so the checks follow the
 // imported data rather than hard-coded counts.
 //
-// Requirements: Node 22+, Chrome/Chromium/Edge, and StudySmart running with the
-// source snapshots imported (see README). Run from the repository root:
+// You need Node 22 or later, Chrome, Chromium or Edge, and StudySmart running with the
+// source snapshots imported (see the README). Run it from the repository root with
 //   node frontend-tests/map-ui.test.mjs
 //
 // Optional environment variables:
 //   STUDYSMART_URL   app address (default http://localhost:8000)
-//   BROWSER          path to the browser executable (default: found automatically)
+//   BROWSER          path to the browser executable (found automatically if not set)
 //   BLOCK_MAP_TILES  "1" to block OpenStreetMap tile downloads (used in CI)
 //   SCREENSHOT_DIR   folder for desktop/tablet/phone screenshots
 import {spawn} from "node:child_process";
@@ -85,7 +85,7 @@ async function connect() {
     const portFile = join(profileDir, "DevToolsActivePort");
     const deadline = Date.now() + 30000;
     while (!existsSync(portFile)) {
-        // Exit code 0 is not a failure: Edge's msedge.exe on Windows hands over to a child process and exits.
+        // Exit code 0 is not a failure. On Windows, msedge.exe hands over to a child process and exits.
         const crashed = browser.exitCode !== null && browser.exitCode !== 0;
         if (crashed || Date.now() > deadline) {
             const reason = crashed ? `exited with code ${browser.exitCode}` : "did not start within 30 s";
@@ -93,7 +93,7 @@ async function connect() {
         }
         await sleep(100);
     }
-    await sleep(100); // The browser writes the file in one go; give it a moment to finish.
+    await sleep(100); // The browser writes the file in one go. Give it a moment to finish.
     const port = readFileSync(portFile, "utf8").split("\n")[0].trim();
     let page;
     for (let attempt = 0; attempt < 50 && !page; attempt++) {
@@ -134,7 +134,7 @@ async function shutDown() {
     await Promise.race([exited, sleep(5000)]);
     browser.kill();
     try {
-        // The browser may still be releasing files (notably on Windows); cleanup must not fail the tests.
+        // The browser may still be releasing files, especially on Windows. Cleanup must not fail the tests.
         rmSync(profileDir, {recursive: true, force: true, maxRetries: 10, retryDelay: 200});
     } catch (error) {
         console.warn(`Could not remove the temporary browser profile ${profileDir}: ${error.code}`);
@@ -174,8 +174,8 @@ const setChecked = (id, checked) => evaluate(`(() => {
     input.checked = ${checked};
     input.dispatchEvent(new Event("change", {bubbles: true}));
 })()`);
-// Selecting a campus starts its search synchronously ("…" appears in the summary at once),
-// so waiting for the "…" to go waits for this search, not an earlier one with the same text.
+// Choosing a campus starts its search straight away, and "…" appears in the summary at once.
+// So waiting for the "…" to disappear waits for this search, not an earlier one with the same text.
 async function chooseCampus(slug, {wait = true} = {}) {
     await evaluate(`(() => {
         const select = document.getElementById("campus-select");
@@ -206,8 +206,8 @@ const markerCentre = (label) => evaluate(`(() => {
     const box = marker.getBoundingClientRect();
     return {x: box.left + box.width / 2, y: box.top + box.height / 2};
 })()`);
-// A numbered result marker that a user could actually click: its centre is not covered by the
-// pick-mode banner, a control or another marker, and it has stopped moving (map animations finish).
+// Finds a numbered result marker that a user could really click. Its centre must not be covered
+// by the pick-mode banner, a control or another marker, and it must have stopped moving.
 async function clickableResultMarker() {
     let previous = "";
     for (let attempt = 0; attempt < 30; attempt++) {
@@ -228,7 +228,7 @@ async function clickableResultMarker() {
         previous = position;
         await sleep(150);
     }
-    // Explain the failure: where each numbered marker is and what covers its centre.
+    // Explains the failure by showing where each numbered marker is and what covers its centre.
     const report = await evaluate(`[...document.querySelectorAll(".leaflet-marker-pane .space-marker")].map((marker) => {
         const box = marker.getBoundingClientRect();
         const x = Math.round(box.left + box.width / 2), y = Math.round(box.top + box.height / 2);
@@ -242,7 +242,7 @@ async function clickableResultMarker() {
     return null;
 }
 
-// Turns "Pick on map" on (the button toggles, so only press it when the mode is off).
+// Turns "Pick on map" on. The button toggles, so only press it when the mode is off.
 const startPicking = () => evaluate(`(() => {
     const button = document.getElementById("choose-location");
     if (button.getAttribute("aria-pressed") === "false") button.click();
@@ -313,16 +313,16 @@ async function run() {
     await send("Page.enable");
     await send("Runtime.enable");
     if (process.env.BLOCK_MAP_TILES === "1") {
-        // Avoids load on OpenStreetMap's volunteer-run tile servers; the checks do not need tiles.
+        // Saves load on OpenStreetMap's volunteer-run tile servers. The checks do not need tiles.
         await send("Network.enable");
         await send("Network.setBlockedURLs", {urls: ["*tile.openstreetmap.org*"]});
     }
     await send("Emulation.setDeviceMetricsOverride", {width: 1366, height: 900, deviceScaleFactor: 1, mobile: false});
     await send("Page.navigate", {url: `${BASE}/`});
 
-    // Before a starting point: every matching space, no result cards.
+    // Before a starting point is chosen, the map shows every matching space and no result cards.
     await waitFor(summaryIncludes("match your filters"));
-    const all = await api("/api/spaces/");  // Paginated: "count" is the total across all pages.
+    const all = await api("/api/spaces/");  // The list is paginated, so "count" is the total across all pages.
     check("all-spaces view before a starting point", (await markers()).length === all.count && (await cards()).length === 0,
         `${(await markers()).length} markers, API ${all.count}`);
 
@@ -357,7 +357,7 @@ async function run() {
         tcdLine.startsWith(`You're in ${titleCase(areasTcd.containing_area?.name ?? "")}`)
         && areasTcd.intersecting_areas.every((area) => tcdLine.includes(titleCase(area.name))), tcdLine);
 
-    // Facility summaries: confirmed, confirmed absent and unknown, exactly as in the API.
+    // Facility summaries show confirmed, confirmed absent and unknown values exactly as the API does.
     // A library with no known facility shows no facility list at all.
     check("card facility chips match true/false/unknown in the API", tcdCards.every((card, i) => {
         const expected = facilityCounts(nearbyTcd[i]);
@@ -376,7 +376,7 @@ async function run() {
         && (await markers()).filter((m) => m.highlighted).map((m) => m.label).join() === "3"
         && await evaluate(`document.querySelector(".leaflet-popup h2")?.textContent`) === tcdCards[2].name);
 
-    // Overlapping result markers stack nearest on top; a marker click highlights its card.
+    // Overlapping result markers stack with the nearest on top. Clicking a marker highlights its card.
     await evaluate(`document.querySelector(".leaflet-popup-close-button")?.click()`);
     await waitFor(`!document.querySelector(".leaflet-popup")`, 3000); // Leaflet fades popups out.
     const stacking = await evaluate(`(() => {
@@ -400,7 +400,7 @@ async function run() {
         && afterMarkerClick.filter((card) => card.active).length === 1
         && (await markers()).filter((m) => m.highlighted).map((m) => m.label).join() === "5");
 
-    // Filters re-run the search; reset restores the page defaults.
+    // Changing a filter runs the search again. Reset restores the page defaults.
     await setChecked("facility-indoor_seating", true);
     await waitFor(searchDone);
     await sleep(300);
@@ -409,7 +409,7 @@ async function run() {
     check("café filter re-runs the search and matches the API", seatedCards.length === Math.min(10, seatedApi.length)
         && seatedCards.every((card, i) => card.id === seatedApi[i].id));
 
-    // A larger result size lists more of the same API results; the café filter keeps every library.
+    // A larger result size lists more of the same API results. The café filter keeps every library.
     await setChecked("result-size-50", true);
     await waitFor(searchDone);
     await sleep(300);
@@ -443,7 +443,7 @@ async function run() {
         && document.getElementById("result-size-10").checked
         && !document.querySelector('input[name="facility"]:checked')`) && await text("filter-summary") === "1.0 km · All types");
 
-    // UCD: coverage note, empty state, nearest fallback and a wider radius.
+    // UCD shows the coverage note, the empty state, the nearest match and a wider radius.
     await chooseCampus("ucd-belfield");
     await waitFor(summaryStartsWith("No study spaces"));
     check("UCD shows its coverage note and an empty state with actions", await evaluate(`!document.getElementById("campus-note").hidden
@@ -473,7 +473,7 @@ async function run() {
     await click("reset-filters");
     await waitFor(searchDone);
 
-    // Geolocation: granted, denied and unavailable.
+    // Geolocation when it is allowed, denied and unavailable.
     await send("Browser.grantPermissions", {permissions: ["geolocation"], origin: BASE});
     await send("Emulation.setGeolocationOverride", {latitude: TCD.lat, longitude: TCD.lng, accuracy: 25});
     await click("locate-button");
@@ -486,17 +486,17 @@ async function run() {
     await waitFor(`!document.getElementById("location-error").hidden`, 5000);
     check("denied geolocation shows a helpful message", (await text("location-error")).startsWith("Location access was denied"));
     await send("Browser.setPermission", {permission: {name: "geolocation"}, setting: "granted", origin: BASE});
-    await send("Emulation.setGeolocationOverride", {}); // No position: "unavailable".
+    await send("Emulation.setGeolocationOverride", {}); // No position means "unavailable".
     await click("locate-button");
     await waitFor(`document.getElementById("location-error").textContent.startsWith("Your location could not be found")`, 12000);
     check("unavailable geolocation shows a helpful message", (await text("location-error")).startsWith("Your location could not be found")
         && await evaluate(`!document.getElementById("locate-button").disabled`));
 
-    // Pick on map: first a result marker (while Trinity's 10 results are certainly shown),
-    // which sets that space as the start without opening its popup; then a bare map point.
+    // Pick on map. First click a result marker while Trinity's 10 results are still shown.
+    // That sets the space as the start without opening its popup. Then click a bare map point.
     await chooseCampus("tcd");
     check("Trinity results shown before picking", (await cards()).length === 10, await summary());
-    // Centre the map on result 1 the way a user would (its card), so the marker is in view.
+    // Centre the map on result 1 by clicking its card, as a user would, so the marker is in view.
     await evaluate(`document.querySelectorAll(".result-card")[0].click()`);
     await sleep(800);
     await startPicking();
@@ -518,15 +518,15 @@ async function run() {
     check("map click sets a map-point start and ends the mode", (await text("location-text")).includes("map point")
         && !await evaluate(`document.getElementById("map").classList.contains("map--choosing")`));
 
-    // Rapid changes: superseded requests are cancelled and the last campus wins.
+    // With rapid changes, older requests are cancelled and the last campus wins.
     for (const slug of ["dcu-glasnevin", "ncad", "rcsi", "griffith", "tcd"]) {
         await chooseCampus(slug, {wait: false});
     }
-    await waitFor(searchDone); // Earlier requests were cancelled; only the last one updates the page.
+    await waitFor(searchDone); // Earlier requests were cancelled. Only the last one updates the page.
     check("rapid campus changes end on the last campus", (await text("location-text")).includes("Trinity")
         && (await cards())[0]?.id === nearbyTcd[0].id, await summary());
 
-    // API failure and recovery (console errors logged during the deliberate failure are expected).
+    // API failure and recovery. Console errors during this deliberate failure are expected.
     const errorsBeforeFailure = consoleErrors.length;
     await send("Fetch.enable", {patterns: [{urlPattern: "*/api/spaces/nearby/*"}]});
     await chooseCampus("ncad");
@@ -573,7 +573,7 @@ async function run() {
             check(`${name}: controls, map, then results; no sideways scrolling`, tops[0] < tops[1] && tops[1] < tops[2] && noSidewaysScroll);
             const mapTop = await evaluate(`document.getElementById("map").getBoundingClientRect().top`);
             check(`${name}: map starts within the first screen`, mapTop < height * 0.6, `map top ${Math.round(mapTop)}px`);
-            // Jump (not smooth-scroll) to the results, so only the page's own scrolling is measured.
+            // Jump straight to the results without smooth scrolling, so only the page's own scrolling is measured.
             await evaluate(`scrollTo({top: document.querySelector(".panel-results").offsetTop, behavior: "instant"})`);
             await evaluate(`document.querySelectorAll(".result-card")[1].click()`);
             // The page uses smooth scrolling, which takes longer on a busy machine.
@@ -593,7 +593,7 @@ async function run() {
         await screenshot(name);
     }
 
-    // About page, still at phone width: reached from the header and links back to the map.
+    // The About page, still at phone width. It opens from the header and links back to the map.
     await evaluate(`document.querySelector('.app-nav a').click()`);
     await waitFor(`document.querySelector("h1")?.textContent === "About StudySmart"`);
     check("phone: header link opens the About page with no sideways scrolling",

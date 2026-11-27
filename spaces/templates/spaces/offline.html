@@ -1,0 +1,29 @@
+{% load static %}<!doctype html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Offline · StudySmart</title>
+    {% include "spaces/includes/head_assets.html" %}
+    <link rel="stylesheet" href="{% static 'spaces/css/map.css' %}">
+</head>
+<body class="about-page">
+    <header class="app-header">
+        <a class="brand" href="{% url 'spaces:home' %}"><span class="brand-mark" aria-hidden="true">S</span>StudySmart</a>
+    </header>
+
+    <main class="about-content">
+        <h1>You're offline</h1>
+        <p class="about-lead">
+            This page isn't saved on your device, and StudySmart can't reach the internet right now.
+        </p>
+        <section class="step">
+            <p>
+                The map still opens offline and shows the results of your last search. New searches
+                need a connection, because the study spaces are found by the StudySmart server.
+            </p>
+            <p class="mb-0"><a class="btn btn-primary" href="{% url 'spaces:home' %}">Open the map</a></p>
+        </section>
+    </main>
+</body>
+</html>

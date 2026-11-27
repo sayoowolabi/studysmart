@@ -50,11 +50,10 @@ flowchart TB
 
     PgAdmin["pgadmin container<br/>volume: studysmart_pgadmin_data"]
     Tiles["OpenStreetMap tile server"]
-    CDN["unpkg (Leaflet) · jsDelivr (Bootstrap)"]
     Snapshots["data/raw snapshots<br/>+ source-manifest.json"]
 
     Api -->|"JSON over HTTP"| Nginx
-    Page -->|"JS, CSS, font"| Nginx
+    Page -->|"JS, CSS, font, Leaflet, Bootstrap"| Nginx
     Nginx -->|"proxy_pass web:8000"| Urls
     Nginx -.-> StaticVolume
     WebContainer -.->|"collectstatic"| StaticVolume
@@ -62,7 +61,6 @@ flowchart TB
     Models -->|"SQL via psycopg"| PostGIS
     PgAdmin --> PostGIS
     Main -.->|"map tiles, Referer = origin only"| Tiles
-    Page -.->|"pinned files with SRI hashes"| CDN
     Snapshots -.->|"read by"| Import
 ```
 
@@ -148,7 +146,6 @@ All four share a dedicated bridge network (`studysmart_network`) with a configur
 | When | Service | Use |
 | --- | --- | --- |
 | In the browser, at run time | OpenStreetMap tile server | Base map tiles. Both the main map and the admin's map widget send only the site origin as `Referer`, as the tile usage policy requires |
-| In the browser, at run time | unpkg, jsDelivr | Leaflet 1.9.4 and Bootstrap 5.3.3 at pinned versions with Subresource Integrity hashes |
 | Building the image | Docker Hub, PyPI, Debian | Base images and packages |
 | Acquiring data (already done; snapshots committed) | Smart Dublin, Overpass API, Nominatim | Library and area files, café data, campus coordinates. Imports and tests make no network calls |
 
@@ -169,7 +166,8 @@ All four share a dedicated bridge network (`studysmart_network`) with a configur
 | Native ES modules, `textContent` only, requests cancelled with `AbortController` | No build tooling; external text cannot inject markup; a slow earlier response cannot overwrite a newer search | Older browsers without module support are not supported |
 | Campuses as a constant list, not a model | They are fixed search starting points, never study spaces or API data | Adding a campus is a code change |
 | CI runs the project's own Compose stack; browser tests use no npm packages | CI matches local versions of GDAL, GEOS and PostGIS; no extra dependency tree to maintain | The CI job builds the image on every run (about a minute) |
-| Self-hosted font, SRI-pinned CDN files, origin-only `Referer` for tiles | Fewer third-party requests; altered CDN files are refused; tile requests comply with policy while public pages keep the stricter referrer policy; only `/admin/` pages, whose map widget cannot set its own, send their origin to other sites | Pinned versions must be updated deliberately |
+| Self-hosted font, Leaflet and Bootstrap; origin-only `Referer` for tiles | No third-party requests except map tiles, so the service worker can cache everything the app needs; tile requests comply with policy while public pages keep the stricter referrer policy; only `/admin/` pages, whose map widget cannot set its own, send their origin to other sites | Pinned versions must be updated deliberately |
+| Service worker served by Django at `/sw.js`; network first for pages, cache first for `/static/spaces/`; `/api/`, `/admin/` and `/accounts/` never handled | The app shell opens offline while online visitors always get current pages and live search results; the cache name is a hash of the cached files, so any change to them replaces the cache | Offline, the map has no tiles and new searches are not possible |
 
 The security configuration (environment-only secrets, host checks, security headers, permissions and the `check --deploy` review) is described in [deployment.md](deployment.md#security-review).
 

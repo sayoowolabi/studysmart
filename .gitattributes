@@ -1,3 +1,7 @@
-# Source snapshots are verified by SHA-256 in data/source-manifest.json,
-# so Git must store and check them out byte-for-byte (no line-ending conversion).
+# The source snapshots are checked against SHA-256 hashes in data/source-manifest.json.
+# Git must keep them exactly as they are, so line endings are never converted.
 data/raw/** -text
+
+# Self-hosted Leaflet and Bootstrap must stay identical to the published files.
+# Their hashes are in docs/decisions.md, so line endings are never converted here either.
+spaces/static/spaces/vendor/** -text

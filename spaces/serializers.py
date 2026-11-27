@@ -12,7 +12,7 @@ from .models import FACILITY_FIELDS, SOURCE_OWNED_FIELDS, StudySpace
 
 
 class StudySpaceSerializer(serializers.ModelSerializer):
-    # Exposed as plain numbers; validate() combines them into one EPSG:4326 Point.
+    # Sent as plain numbers. validate() combines them into one EPSG:4326 Point.
     latitude = serializers.FloatField(source="location.y", min_value=-90, max_value=90)
     longitude = serializers.FloatField(source="location.x", min_value=-180, max_value=180)
 
@@ -49,7 +49,7 @@ class StudySpaceSerializer(serializers.ModelSerializer):
         return attrs
 
     def build_point(self, coordinates):
-        # A PATCH may send only one coordinate; keep the other from the stored point.
+        # A PATCH may send only one coordinate. The other one is kept from the stored point.
         current = self.instance.location if self.instance else None
         longitude = coordinates.get("x", current.x if current else None)
         latitude = coordinates.get("y", current.y if current else None)
@@ -68,7 +68,7 @@ class StudySpaceSerializer(serializers.ModelSerializer):
             raise serializers.ValidationError(errors)
 
     def lock_changed_facilities(self, attrs):
-        # Mirrors the admin: any facility change protects all five values from imports.
+        # Same rule as the admin. Any facility change protects all five values from imports.
         changed = [
             field for field in FACILITY_FIELDS
             if field in attrs and attrs[field] != getattr(self.instance, field, None)
@@ -99,7 +99,7 @@ class StudySpaceNearestSerializer(StudySpaceDistanceSerializer):
         fields = [*StudySpaceDistanceSerializer.Meta.fields, "line"]
 
     def get_line(self, space):
-        # A GeoJSON LineString: [[longitude, latitude] of the search point, [… of the space]].
+        # A GeoJSON LineString from the search point to the space, each as [longitude, latitude].
         return json.loads(space.line_geojson)
 
 

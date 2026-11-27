@@ -1,16 +1,16 @@
 /*
- * Search panel: starting point, filters and results.
+ * The search panel, with the starting point, filters and results.
  *
  * 1. The user sets a starting point: a university campus, their current location,
  *    or a point picked on the map ("Pick on map" mode).
- * 2. Filters: radius, number of results, type and confirmed café facilities.
+ * 2. The user sets filters for radius, number of results, type and confirmed café facilities.
  * 3. The nearest matches (10 by default) appear as numbered cards and matching numbered markers.
- * Every change re-runs the search automatically, always with the same filters:
- *   no starting point     - every matching space        GET /api/spaces/?filters&page_size=1000 (all pages)
- *   starting point        - matches within the radius   GET /api/spaces/nearby/?lat&lng&radius&filters
- *                           and the areas it reaches    GET /api/areas/intersecting/?lat&lng&radius
- *   "Show nearest match"  - the closest match anywhere  GET /api/spaces/nearest/?lat&lng&filters
- * PostGIS does all distance, radius and nearest work; the browser only displays results.
+ * Every change runs the search again automatically, always with the same filters.
+ *   No starting point: every matching space       GET /api/spaces/?filters&page_size=1000 (all pages)
+ *   Starting point: matches within the radius     GET /api/spaces/nearby/?lat&lng&radius&filters
+ *     and the areas the radius reaches            GET /api/areas/intersecting/?lat&lng&radius
+ *   "Show nearest match": the closest anywhere    GET /api/spaces/nearest/?lat&lng&filters
+ * PostGIS does all the distance, radius and nearest work. The browser only shows the results.
  */
 import {fetchJson, isAbortError} from "./api.js";
 import {formatDistance, setMarkerHighlight, showSpaces} from "./markers.js";
@@ -32,7 +32,7 @@ const state = {
     urls: null,
     origin: null,            // {latlng, label} of the starting point, or null
     originMarker: null,
-    showNearest: false,      // true after "Show nearest match"; any other change resets it
+    showNearest: false,      // true after "Show nearest match". Any other change resets it
     choosing: false,         // true while "Pick on map" waits for a click
     overlay: null,           // radius circle or nearest-match line
     markers: new Map(),      // study-space id -> marker currently on the map
@@ -295,7 +295,7 @@ async function fetchAllPages(url) {
     while (pageUrl) {
         const page = await fetchLatest(pageUrl);
         spaces.push(...page.results);
-        // Keep only path and query: the absolute "next" URL is built by Django behind the
+        // Keep only the path and query. Django builds the absolute "next" URL behind the
         // proxy, and the page's own origin is always the right one to request.
         const next = page.next ? new URL(page.next) : null;
         pageUrl = next ? `${next.pathname}${next.search}` : null;
@@ -325,7 +325,7 @@ async function runSearch() {
         }
     } catch (error) {
         if (isAbortError(error)) {
-            return; // A newer search replaced this one; it will update the page itself.
+            return; // A newer search replaced this one, and it will update the page itself.
         }
         console.error(error);
         setStatus("Study spaces could not be loaded. Please try again.", "danger");
@@ -364,11 +364,11 @@ async function searchNearby() {
     const top = spaces.slice(0, selectedResultSize()); // Already ordered nearest first by PostGIS.
     display(top, {numbered: true});
     renderResults(top, (space) => selectResult(space.id));
-    // The circle only shows the chosen radius; PostGIS has already decided which spaces are inside it.
+    // The circle only shows the chosen radius. PostGIS has already decided which spaces are inside it.
     const circle = L.circle(state.origin.latlng, {
         radius, color: "#5a54d6", weight: 1.5, fillOpacity: 0.04, interactive: false,
     }).addTo(state.overlay);
-    showAreaLine(radius); // Not awaited: it adds context and must never delay or fail the search.
+    showAreaLine(radius); // Not awaited. It only adds context and must never delay or break the search.
 
     const within = `within ${formatDistance(radius)}`;
     if (spaces.length === 0) {
@@ -421,7 +421,7 @@ function areaLineText({containing_area: containing, intersecting_areas: intersec
     return others.length > 0 ? `${start}; this search reaches ${reached}.` : `${start}.`;
 }
 
-/* The source stores area names in capitals: "SOUTH EAST" becomes "South East". */
+/* The source stores area names in capitals, so "SOUTH EAST" becomes "South East". */
 function areaName(area) {
     return area.name.toLowerCase().replace(/\b\w/g, (letter) => letter.toUpperCase());
 }
@@ -444,7 +444,7 @@ async function showNearestMatch() {
     clearStatus();
     display([space], {numbered: true});
     renderResults([space], (match) => selectResult(match.id));
-    // The line comes from PostGIS as GeoJSON ([longitude, latitude]); L.geoJSON reads that order.
+    // The line comes from PostGIS as GeoJSON in [longitude, latitude] order, which L.geoJSON reads correctly.
     L.geoJSON(space.line, {
         style: {color: "#2b2a33", weight: 2, dashArray: "4 6", className: "nearest-line"}, interactive: false,
     }).addTo(state.overlay);
@@ -483,11 +483,11 @@ function showActions(visible) {
     element("widen-radius").hidden = selectedRadius() >= largest;
 }
 
-/* Every study-space marker click: picks a starting point in "Pick on map" mode, otherwise selects the result. */
+/* Runs on every study-space marker click. In "Pick on map" mode it sets the starting point, otherwise it selects the result. */
 function onMarkerClick(marker, space) {
     if (state.choosing) {
         setOrigin(marker.getLatLng(), space.name);
-        return true; // Handled: no popup.
+        return true; // Handled, so no popup opens.
     }
     selectResult(space.id, {fromMap: true});
     return false; // The popup opens as usual.
@@ -495,7 +495,7 @@ function onMarkerClick(marker, space) {
 
 /*
  * Highlights the result's card and marker. From a card click, the map also moves to
- * the marker and opens its popup; from a marker click, the card scrolls into view.
+ * the marker and opens its popup. From a marker click, the card scrolls into view.
  */
 function selectResult(id, {fromMap = false} = {}) {
     const card = markActiveResult(id);
@@ -511,7 +511,7 @@ function selectResult(id, {fromMap = false} = {}) {
     setMarkerHighlight(marker, true);
 
     if (fromMap) {
-        // Only the large-screen panel scrolls on its own; on phones this would scroll the map away.
+        // Only the large-screen panel scrolls on its own. On phones this would scroll the map away.
         if (LARGE_SCREEN.matches) {
             card.scrollIntoView({block: "nearest"});
         }

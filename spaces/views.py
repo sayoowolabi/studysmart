@@ -1,6 +1,11 @@
+import json
+
 from django.db import DatabaseError
 from django.db.models import Count, Q
+from django.http import JsonResponse
 from django.shortcuts import render
+from django.templatetags.static import static
+from django.urls import reverse
 from rest_framework import status, viewsets
 from rest_framework.decorators import action
 from rest_framework.exceptions import APIException, NotFound, ValidationError
@@ -8,6 +13,7 @@ from rest_framework.permissions import AllowAny
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
+from . import pwa
 from .models import FACILITY_FIELDS, StudySpace
 from .pagination import StudySpacePagination
 from .serializers import (
@@ -23,14 +29,14 @@ from .universities import CAMPUSES
 FACILITY_FILTER_VALUES = {"true": True, "false": False, "unknown": None}
 
 
-# Search radii offered on the map page (metres); tests check they are within the API's limit.
+# Search radii offered on the map page, in metres. Tests check they are within the API's limit.
 RADIUS_CHOICES_M = (500, 1000, 2000, 5000)
 
-# How many nearest results the map page lists; the first is selected by default.
+# How many nearest results the map page lists. The first one is selected by default.
 RESULT_SIZE_CHOICES = (10, 25, 50)
 
 # Facility filters offered on the map page, in display order. Power outlets and laptop
-# permission remain API filters but are not offered here: almost no source records them.
+# permission are still API filters but are not offered here, because almost no source records them.
 MAP_FACILITY_FILTERS = (
     ("indoor_seating", "Indoor seating"),
     ("has_wifi", "Wi-Fi"),
@@ -71,6 +77,51 @@ def about(request):
     })
 
 
+def offline(request):
+    """Shown by the service worker when a page is requested offline and is not in its cache."""
+    return render(request, "spaces/offline.html")
+
+
+def service_worker(request):
+    """
+    The service worker script. Served from the site root rather than /static/ because a
+    service worker only controls pages under its own path, and it must control the whole app.
+    """
+    response = render(request, "spaces/sw.js", {
+        "cache_version": pwa.cache_version(),
+        "precache_urls": json.dumps(pwa.precache_urls()),
+        "shell_pages": json.dumps(pwa.shell_page_urls()),
+        "offline_url": json.dumps(reverse(pwa.OFFLINE_PAGE_ROUTE)),
+        "static_prefix": json.dumps(static("spaces/")),
+    }, content_type="application/javascript")
+    # The browser must check for a new version on every visit, never use an old copy.
+    response["Cache-Control"] = "no-cache"
+    return response
+
+
+def manifest(request):
+    """The web app manifest. It tells the browser how to install StudySmart as an app."""
+    icon = static("spaces/icons/icon.svg")
+    return JsonResponse({
+        "id": "/",
+        "name": "StudySmart: Dublin study spaces",
+        "short_name": "StudySmart",
+        "description": "Find a library or café to study in Dublin.",
+        "start_url": reverse("spaces:home"),
+        "scope": "/",
+        "display": "standalone",
+        "background_color": "#faf7f2",
+        "theme_color": "#5a54d6",
+        "icons": [
+            {"src": static("spaces/icons/icon-192.png"), "sizes": "192x192", "type": "image/png"},
+            {"src": static("spaces/icons/icon-512.png"), "sizes": "512x512", "type": "image/png"},
+            {"src": static("spaces/icons/icon-maskable-512.png"), "sizes": "512x512", "type": "image/png",
+             "purpose": "maskable"},
+            {"src": icon, "sizes": "any", "type": "image/svg+xml"},
+        ],
+    }, content_type="application/manifest+json", json_dumps_params={"ensure_ascii": False})
+
+
 class ImportedRecordConflict(APIException):
     status_code = status.HTTP_409_CONFLICT
     default_detail = (
@@ -90,8 +141,8 @@ def valid_space_type(params, name):
 def filter_study_spaces(queryset, params):
     """
     Apply ?type= and tri-state facility filters, rejecting unrecognised values.
-    ?facilities_apply_to=<type> limits the facility filters to that type; other types
-    are returned whatever their facilities (the map page uses this for cafés).
+    ?facilities_apply_to=<type> limits the facility filters to that type. Other types
+    are returned whatever their facilities. The map page uses this for cafés.
     """
     space_type = valid_space_type(params, "type")
     if space_type is not None:
@@ -118,7 +169,7 @@ def filter_study_spaces(queryset, params):
 
 
 class StudySpaceViewSet(viewsets.ModelViewSet):
-    """Public read access; writes need the matching Django model permission."""
+    """Anyone can read. Writes need the matching Django model permission."""
 
     queryset = StudySpace.objects.all()
     serializer_class = StudySpaceSerializer
@@ -160,9 +211,9 @@ class StudySpaceViewSet(viewsets.ModelViewSet):
 
 
 class AreaCoverageView(APIView):
-    """GET /api/areas/coverage/: library and café counts per administrative area."""
+    """GET /api/areas/coverage/ returns library and café counts per administrative area."""
 
-    # Set explicitly: the default model-permission class needs a queryset. GET is the only method.
+    # Set explicitly because the default model-permission class needs a queryset. GET is the only method.
     permission_classes = [AllowAny]
 
     def get(self, request):
@@ -170,7 +221,7 @@ class AreaCoverageView(APIView):
 
 
 class AreaIntersectionView(APIView):
-    """GET /api/areas/intersecting/?lat=&lng=&radius=: the areas around a search point."""
+    """GET /api/areas/intersecting/?lat=&lng=&radius= returns the areas around a search point."""
 
     permission_classes = [AllowAny]
 
@@ -182,7 +233,7 @@ class AreaIntersectionView(APIView):
 
 
 class AreaBoundaryView(APIView):
-    """GET /api/areas/: administrative-area outlines as GeoJSON for the map overlay."""
+    """GET /api/areas/ returns administrative-area outlines as GeoJSON for the map overlay."""
 
     permission_classes = [AllowAny]
 

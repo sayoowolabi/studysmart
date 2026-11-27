@@ -1,0 +1,8 @@
+{% load static %}{# Shared by every page: Bootstrap, app manifest and icons. Each page links map.css itself, last. #}
+    <!-- Bootstrap 5.3.3 is served from this site (MIT licence in vendor/bootstrap/LICENSE), so the
+         service worker can cache it and the app works offline without depending on a CDN. -->
+    <link rel="stylesheet" href="{% static 'spaces/vendor/bootstrap/bootstrap.min.css' %}">
+    <link rel="manifest" href="{% url 'spaces:manifest' %}">
+    <meta name="theme-color" content="#5a54d6">
+    <link rel="icon" href="{% static 'spaces/icons/icon.svg' %}" type="image/svg+xml">
+    <link rel="apple-touch-icon" href="{% static 'spaces/icons/apple-touch-icon.png' %}">

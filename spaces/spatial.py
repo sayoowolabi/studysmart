@@ -27,7 +27,7 @@ def spaces_within(queryset, point, radius_m):
 
 
 class MakeLine(GeoFunc):
-    """ST_MakeLine(a, b): the straight line between two points of the same row."""
+    """ST_MakeLine(a, b) builds the straight line between two points in the same row."""
 
     function = "ST_MakeLine"
     geom_param_pos = (0, 1)
@@ -68,7 +68,7 @@ def area_coverage():
 
 class GeodesicBuffer(GeoFunc):
     """
-    ST_Buffer(point::geography, metres)::geometry: a circle measured in metres on the ground.
+    ST_Buffer(point::geography, metres)::geometry makes a circle measured in metres on the ground.
     On geometry in EPSG:4326 the radius would be in degrees, and at Dublin's latitude a degree
     of longitude is only about 60% as long as a degree of latitude.
     """
@@ -81,7 +81,7 @@ class GeodesicBuffer(GeoFunc):
 
 
 def areas_around(point, radius_m):
-    """The area containing the point (None if outside all) and all areas within reach of the radius."""
+    """The area that contains the point (None if it is outside them all) and every area the radius reaches."""
     areas = AdministrativeArea.objects.values("id", "source_id", "name")
     return {
         # ST_Covers includes the edge, like ST_CoveredBy in area_coverage(). A point on a shared

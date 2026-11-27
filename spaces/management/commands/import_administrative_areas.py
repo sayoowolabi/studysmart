@@ -58,7 +58,7 @@ class Command(SnapshotImportCommand):
         if not isinstance(shape, dict) or shape.get("type") not in {"Polygon", "MultiPolygon"}:
             raise ValueError("Boundary must be a Polygon or MultiPolygon.")
         geometry = OGRGeometry(json.dumps(shape))
-        # The official file has a Z ordinate, while our application is explicitly 2D.
+        # The official file has Z values, but the app only uses 2D geometry.
         had_z = geometry.is_3d
         geometry.set_3d(False)
         geometry.srs = self.entry["source_srid"]

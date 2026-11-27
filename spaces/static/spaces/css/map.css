@@ -1,6 +1,6 @@
-/* StudySmart interface. Bootstrap 5 supplies the base; these rules add the app layout and components. */
+/* StudySmart styles. Bootstrap 5 gives the base styles and these rules add the app layout and components. */
 
-/* Nunito (SIL Open Font License, see fonts/OFL.txt), served from this site: no third-party font request. */
+/* Nunito font (SIL Open Font License, see fonts/OFL.txt). It is served from this site, so no outside font request is made. */
 @font-face {
     font-family: "Nunito";
     font-style: normal;
@@ -94,8 +94,8 @@
 }
 
 /* ---------- Page layout ----------
- * Large screens: header, then a fixed-height row of [scrolling panel | map].
- * Below 992px: the page scrolls; .panel's two parts are laid out around the map
+ * On large screens the header sits above a fixed-height row with the scrolling panel and the map.
+ * Below 992px the whole page scrolls. The two parts of .panel are placed around the map
  * (controls, map, results) using display: contents and order.
  */
 body.app {
@@ -118,7 +118,7 @@ body.app {
 
 .brand {
     display: inline-flex;
-    margin: 0; /* The brand is the page's <h1>; keep the header's size and spacing. */
+    margin: 0; /* The brand is the page's <h1>. This keeps the header's size and spacing. */
     align-items: center;
     gap: 0.5rem;
     font-weight: 800;
@@ -332,7 +332,7 @@ body.app {
 .coverage-note { background: #fff6e0; color: #6b4e00; }
 .location-error { background: #fdecec; color: #8a1c1c; }
 
-/* Collapsible filters: the summary line shows the current choices when closed. */
+/* Collapsible filters. When closed, the summary line shows the current choices. */
 .filters-summary {
     display: flex;
     flex-wrap: wrap;
@@ -416,7 +416,7 @@ body.app {
     color: var(--ss-text-muted);
 }
 
-/* :not([hidden]), because display: block here would otherwise override the hidden attribute. */
+/* :not([hidden]) is needed because display: block here would otherwise override the hidden attribute. */
 .results-areas:not([hidden]) {
     display: block;
     margin-top: 0.25rem;
@@ -616,7 +616,7 @@ body.app {
     .map-legend { bottom: 2.75rem; } /* The attribution wraps onto two lines on narrow screens. */
 }
 
-/* "Pick on map" mode: crosshair cursor and a blue frame drawn above the tiles. */
+/* "Pick on map" mode shows a crosshair cursor and a blue frame above the tiles. */
 .map.map--choosing { cursor: crosshair; }
 
 .map.map--choosing::after {
@@ -632,7 +632,7 @@ body.app {
 
 /* ---------- Markers ----------
  * Libraries are squares and cafés circles, so type never depends on colour alone.
- * Before a search they show a letter; after a search, the result number.
+ * Before a search they show a letter. After a search they show the result number.
  */
 .space-marker {
     display: flex;
@@ -649,7 +649,7 @@ body.app {
 .space-marker--library { background: var(--ss-library); border-radius: 4px; }
 .space-marker--cafe { background: var(--ss-cafe); border-radius: 50%; }
 
-/* The selected result: larger, with a yellow ring. Leaflet sets its size from iconSize. */
+/* The selected result is larger, with a yellow ring. Leaflet sets its size from iconSize. */
 .space-marker--highlight {
     border: 3px solid var(--ss-highlight);
     box-shadow: 0 0 0 3px var(--ss-text), 0 3px 8px rgba(0, 0, 0, 0.45);

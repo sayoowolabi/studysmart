@@ -1,6 +1,6 @@
 """University campuses offered as search starting points on the map.
 
-Campuses are search origins only: they are not study spaces and are never stored
+Campuses are only search starting points. They are not study spaces and are never stored
 or returned by the API. Each point is the representative point of the named
 OpenStreetMap campus element, retrieved through Nominatim and
 Overpass (© OpenStreetMap contributors, ODbL), rounded to five decimal places.

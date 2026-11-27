@@ -1,6 +1,6 @@
 /*
- * Messages shown over the map. The current search has one status alert, replaced on
- * every search; separate warnings (such as a failed boundary request) stay visible.
+ * Messages shown over the map. The current search has one status alert, which is replaced
+ * on every search. Separate warnings, such as a failed boundary request, stay visible.
  */
 
 let searchStatus = null;
@@ -26,7 +26,7 @@ export function clearStatus() {
 export function showWarning(text, variant = "warning") {
     const alert = document.createElement("div");
     alert.className = `alert alert-${variant}`;
-    alert.setAttribute("role", "alert"); // Announced once; the message area itself is not a live region.
+    alert.setAttribute("role", "alert"); // Announced once. The message area itself is not a live region.
     alert.textContent = text;
     messageArea().append(alert);
 }

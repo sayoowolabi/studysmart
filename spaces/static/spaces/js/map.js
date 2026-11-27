@@ -1,10 +1,10 @@
 /*
- * StudySmart map entry point: creates the Leaflet map and starts the other modules.
- *   api.js     - requests to the Django REST API
- *   markers.js - study-space markers and popups
- *   search.js  - search sidebar: location, radius, filters, results
- *   areas.js   - boundary overlay and per-area counts
- *   status.js  - loading, empty and error messages over the map
+ * Entry point for the StudySmart map. It creates the Leaflet map and starts the other modules.
+ *   api.js      sends requests to the Django REST API
+ *   markers.js  draws the study-space markers and popups
+ *   search.js   runs the search panel (location, radius, filters and results)
+ *   areas.js    shows the boundary overlay and the counts per area
+ *   status.js   shows loading, empty and error messages over the map
  */
 import {loadAreaBoundaries, loadAreaStatistics} from "./areas.js";
 import {createSpaceLayers} from "./markers.js";

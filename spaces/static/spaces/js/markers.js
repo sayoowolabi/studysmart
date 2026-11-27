@@ -20,8 +20,8 @@ export const FACILITY_LABELS = {
 
 /*
  * The library dataset records no facilities, so a library's list would read "Unknown" for
- * everything, even indoor seating. Libraries show facilities only once one is known
- * (for example after an administrator verifies it); cafés always show them.
+ * everything, even indoor seating. Libraries only show facilities once one is known,
+ * for example after an administrator checks it. Cafés always show them.
  */
 export function showsFacilities(space) {
     return space.space_type !== "library"
@@ -53,9 +53,9 @@ export function createSpaceLayers(map) {
 
 /*
  * Replaces the markers on the map and returns them by study-space id.
- * numbered: label markers 1, 2, 3… in list order (search results) instead of L/C.
- * onMarkerClick(marker, space) runs first on every marker click; if it returns true
- * the click has been used (for example to pick a starting point) and no popup opens.
+ * With numbered set, markers are labelled 1, 2, 3… in list order instead of L or C.
+ * onMarkerClick(marker, space) runs first on every marker click. If it returns true,
+ * the click has been used, for example to pick a starting point, and no popup opens.
  */
 export function showSpaces(layers, spaces, {numbered = false, onMarkerClick = () => false} = {}) {
     for (const layer of Object.values(layers)) {
@@ -98,9 +98,9 @@ function markerIcon(space, label, highlighted) {
 }
 
 /*
- * Which marker is drawn on top where markers overlap: a highlighted result first; then,
- * among numbered results, the nearer one (lower number); otherwise libraries above the
- * many cafés. Leaflet adds this offset to each marker's screen position.
+ * Decides which marker is drawn on top where markers overlap. A highlighted result comes
+ * first. Among numbered results the nearer one (lower number) wins. Otherwise libraries
+ * sit above the many cafés. Leaflet adds this offset to each marker's screen position.
  */
 function stackingOffset(space, rank, highlighted) {
     if (highlighted) {
@@ -146,7 +146,7 @@ function buildPopup(space) {
     appendElement(popup, "h2", space.name);
     appendElement(popup, "p", `${SPACE_TYPES[space.space_type].label} · ${space.address || "Address not recorded"}`);
     if (space.distance_m !== undefined) {
-        // distance_m is calculated by PostGIS; the browser only formats it.
+        // distance_m is calculated by PostGIS. The browser only formats it.
         appendElement(popup, "p", `Distance: ${formatDistance(space.distance_m)}`).className = "popup-distance";
     }
 

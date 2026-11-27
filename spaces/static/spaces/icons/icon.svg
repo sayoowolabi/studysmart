@@ -1,0 +1,14 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
+  <!-- StudySmart icon: a magnifying glass (searching) over an open book (studying). Drawn for StudySmart. -->
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#5a54d6"/>
+      <stop offset="1" stop-color="#8b6fe0"/>
+    </linearGradient>
+  </defs>
+  <rect width="512" height="512" rx="112" fill="url(#bg)"/>
+  <circle cx="220" cy="220" r="118" fill="#ffffff" fill-opacity="0.14" stroke="#ffffff" stroke-width="36"/>
+  <path d="M322 322L398 398" stroke="#ffffff" stroke-width="52" stroke-linecap="round"/>
+  <path d="M220 190C196 174 166 170 150 172V262C168 260 196 264 220 280ZM220 190C244 174 274 170 290 172V262C272 260 244 264 220 280Z" fill="#ffffff"/>
+  <path d="M220 192V278" stroke="#6b5fdc" stroke-width="6" stroke-linecap="round"/>
+</svg>

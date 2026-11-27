@@ -1,4 +1,4 @@
-/* Administrative areas: the optional boundary overlay and the per-area count table. */
+/* Administrative areas. Handles the optional boundary overlay and the table of counts per area. */
 import {fetchJson} from "./api.js";
 import {appendElement} from "./markers.js";
 import {showWarning} from "./status.js";
@@ -13,7 +13,7 @@ export async function loadAreaBoundaries(map, url) {
         return;
     }
     if (collection.features.length === 0) {
-        return; // No areas imported: there is simply no overlay to offer.
+        return; // No areas are imported, so there is no overlay to offer.
     }
 
     // L.geoJSON reads GeoJSON's [longitude, latitude] order itself.
@@ -26,7 +26,7 @@ export async function loadAreaBoundaries(map, url) {
             layer.bindTooltip(name, {sticky: true});
         },
     });
-    // Off by default; the layer control in the top-right corner toggles it.
+    // Off by default. The layer control in the top-right corner turns it on and off.
     L.control.layers(null, {"Area boundaries": boundaries}).addTo(map);
 }
 

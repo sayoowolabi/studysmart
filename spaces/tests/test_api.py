@@ -105,7 +105,7 @@ class FilterTests(APITestBase):
 
     def test_facility_filters_can_apply_to_cafes_only(self):
         make_space(name="Unknown Library", space_type="library", indoor_seating=None)
-        # Libraries are kept whatever their facilities; cafés still need confirmed seating.
+        # Libraries are kept whatever their facilities. Cafés still need confirmed seating.
         self.assertEqual(
             self.list_names("?indoor_seating=true&facilities_apply_to=cafe"),
             ["Seated Cafe", "Seated Library", "Unknown Library"],
@@ -162,7 +162,7 @@ class PermissionTests(APITestBase):
             for method in ("post", "put", "patch", "delete"):
                 with self.subTest(url=url, method=method):
                     response = getattr(self.client, method)(url, valid_payload(), format="json")
-                    # 403: authentication required; 405: the endpoint is read-only.
+                    # 403 means login is required. 405 means the endpoint is read-only.
                     self.assertIn(response.status_code, (403, 405))
         self.assertEqual(list(StudySpace.objects.values_list("name", flat=True)), ["Fictional Test Space"])
 
@@ -353,7 +353,7 @@ class PaginationTests(APITestBase):
         self.assertEqual(len(response.data), 3)
 
 
-# Tests normally run with a dummy cache, which never throttles; these use a real memory cache.
+# Tests normally run with a dummy cache, which never throttles. These tests use a real memory cache.
 @override_settings(CACHES={"default": {"BACKEND": "django.core.cache.backends.locmem.LocMemCache"}})
 class ThrottleTests(APITestBase):
     def setUp(self):
@@ -371,7 +371,7 @@ class ThrottleTests(APITestBase):
         self.assertIn("Retry-After", response.headers)
 
     def test_each_visitor_behind_the_proxy_has_their_own_limit(self):
-        # Nginx adds the visitor's address to X-Forwarded-For; NUM_PROXIES=1 makes DRF use it.
+        # Nginx adds the visitor's address to X-Forwarded-For. NUM_PROXIES=1 makes DRF use it.
         for _ in range(2):
             self.client.get(LIST_URL, HTTP_X_FORWARDED_FOR="203.0.113.1")
         self.assertEqual(self.client.get(LIST_URL, HTTP_X_FORWARDED_FOR="203.0.113.1").status_code, 429)

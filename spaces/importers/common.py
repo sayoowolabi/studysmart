@@ -1,5 +1,5 @@
 # AI assistance: parts of this file were written with Claude.
-"""Shared snapshot validation and transactional source-key upserts."""
+"""Shared snapshot checks, and insert-or-update by source key inside a transaction."""
 import hashlib
 import json
 from collections import Counter
@@ -42,7 +42,7 @@ def load_identities(path):
 
 
 def source_point(longitude, latitude):
-    # GeoDjango point order is longitude, latitude; values remain EPSG:4326.
+    # GeoDjango points take longitude first, then latitude. Values stay in EPSG:4326.
     if isinstance(longitude, bool) or isinstance(latitude, bool):
         raise ValueError("Boolean coordinates are invalid.")
     if longitude is None or latitude is None or longitude == "" or latitude == "":
@@ -181,7 +181,7 @@ class SnapshotImportCommand(BaseCommand):
         self.report_duplicates()
 
     def report_duplicates(self):
-        # Same names can identify different branches; report rather than auto-merge.
+        # The same name can belong to different branches, so report it instead of merging automatically.
         if self.uses_study_area:
             from django.db.models import Count
             from django.db.models.functions import Lower

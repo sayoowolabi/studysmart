@@ -15,7 +15,7 @@ class CampusListTests(TestCase):
         for campus in CAMPUSES:
             with self.subTest(campus=campus.slug):
                 self.assertTrue(math.isfinite(campus.latitude) and math.isfinite(campus.longitude))
-                # Dublin is about 53.3 N, 6.3 W: catches swapped or mistyped coordinates.
+                # Dublin is about 53.3 N, 6.3 W. This catches swapped or mistyped coordinates.
                 self.assertTrue(53.25 < campus.latitude < 53.45, campus.latitude)
                 self.assertTrue(-6.45 < campus.longitude < -6.10, campus.longitude)
                 # Each point is traceable to the OpenStreetMap element it was taken from.

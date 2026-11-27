@@ -107,13 +107,25 @@ class HomePageTests(TestCase):  # The page counts confirmed facilities, so it ne
         self.assertContains(response, "All Recorded Study Spaces by Area")
         self.assertContains(response, "filters above")
 
-    def test_cdn_assets_are_pinned_with_integrity_hashes(self):
+    def test_libraries_are_self_hosted_with_their_licences(self):
+        # Served from this site so the service worker can cache them. No CDN request is made.
         content = self.client.get(reverse("spaces:home")).content.decode()
-        for asset in ("leaflet@1.9.4/dist/leaflet.css", "leaflet@1.9.4/dist/leaflet.js",
-                      "bootstrap@5.3.3/dist/css/bootstrap.min.css"):
-            tag = re.search(rf"<(?:link|script)[^>]*{re.escape(asset)}[^>]*>", content)
-            self.assertIsNotNone(tag, asset)
-            self.assertRegex(tag.group(), r'integrity="sha(256|384)-[A-Za-z0-9+/=]+"')
+        self.assertNotRegex(content, r'(?:href|src)="https?://')
+        for asset in ("vendor/leaflet/leaflet.css", "vendor/leaflet/leaflet.js", "vendor/bootstrap/bootstrap.min.css"):
+            self.assertIn(static(f"spaces/{asset}"), content)
+            self.assertIsNotNone(finders.find(f"spaces/{asset}"), asset)
+        self.assertIn("BSD 2-Clause", Path(finders.find("spaces/vendor/leaflet/LICENSE")).read_text(encoding="utf-8"))
+        self.assertIn("MIT License", Path(finders.find("spaces/vendor/bootstrap/LICENSE")).read_text(encoding="utf-8"))
+        # leaflet.css points to these images for the default marker (the starting-point pin).
+        for image in ("marker-icon.png", "marker-icon-2x.png", "marker-shadow.png"):
+            self.assertIsNotNone(finders.find(f"spaces/vendor/leaflet/images/{image}"), image)
+
+    def test_stylesheets_load_in_order(self):
+        # map.css overrides Bootstrap and Leaflet, so it must come last.
+        content = self.client.get(reverse("spaces:home")).content.decode()
+        positions = [content.index(static(f"spaces/{name}")) for name in
+                     ("vendor/bootstrap/bootstrap.min.css", "vendor/leaflet/leaflet.css", "css/map.css")]
+        self.assertEqual(positions, sorted(positions))
 
     def test_map_script_attributes_openstreetmap(self):
         script = Path(finders.find("spaces/js/map.js")).read_text(encoding="utf-8")
@@ -178,8 +190,8 @@ class HomePageTests(TestCase):  # The page counts confirmed facilities, so it ne
         self.assertNotIn("confirmed records yet", content)
 
     def test_security_headers_on_pages_and_api(self):
-        # SecurityMiddleware: nosniff, Referrer-Policy and Cross-Origin-Opener-Policy (Django defaults);
-        # XFrameOptionsMiddleware: DENY, so other sites cannot frame the map or the API.
+        # SecurityMiddleware sends nosniff, Referrer-Policy and Cross-Origin-Opener-Policy (Django defaults).
+        # XFrameOptionsMiddleware sends DENY, so other sites cannot frame the map or the API.
         expected = {
             "X-Frame-Options": "DENY",
             "X-Content-Type-Options": "nosniff",
@@ -203,7 +215,7 @@ class HomePageTests(TestCase):  # The page counts confirmed facilities, so it ne
 
 
 @override_settings(ALLOWED_HOSTS=["testserver"])
-class AboutPageTests(SimpleTestCase):  # A static page: no database queries.
+class AboutPageTests(SimpleTestCase):  # A static page with no database queries.
     def test_about_page_explains_the_app_and_links_back_to_the_map(self):
         response = self.client.get(reverse("spaces:about"))
         self.assertEqual(response.status_code, 200)
@@ -234,7 +246,7 @@ class DatabaseConnectionTests(TestCase):
 
 class SettingsEnvironmentTests(SimpleTestCase):
     def load_settings(self, setting="DEBUG", **overrides):
-        """Imports the settings in a fresh process with the given environment; prints one setting."""
+        """Imports the settings in a fresh process with the given environment and prints one setting."""
         environment = os.environ.copy()
         environment.pop("DJANGO_DEBUG", None)
         for name, value in overrides.items():
@@ -370,6 +382,6 @@ class ProductionServingTests(SimpleTestCase):
         self.assertEqual(len(re.findall(r"(?m)^\s*add_header ", config)), 3)
 
     def test_only_admin_pages_send_their_origin_to_other_sites(self):
-        # OSM blocks the admin map widget's tiles without a Referer; the widget cannot request one itself.
+        # OSM blocks the admin map widget's tiles without a Referer. The widget cannot ask for one itself.
         config = self.project_file("nginx/default.conf")
         self.assertRegex(config, r"default same-origin;\n\s*~\^/admin/ strict-origin-when-cross-origin;")

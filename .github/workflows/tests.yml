@@ -1,7 +1,7 @@
-# Runs the Django checks and test suite against PostGIS using the project's own
-# Dockerfile and docker-compose.yml, so CI uses the same Python, GDAL/GEOS/PROJ
-# and PostGIS versions as local development; then runs the browser tests against
-# the running site with the source snapshots imported.
+# Runs the Django checks and tests against PostGIS using the project's own Dockerfile
+# and docker-compose.yml. This way CI uses the same Python, GDAL, GEOS, PROJ and PostGIS
+# versions as local development. It then runs the browser tests against the running site
+# with the source snapshots imported.
 # Made with assistance from Claude code
 name: Tests
 
@@ -67,7 +67,7 @@ jobs:
         with:
           node-version: "22"
 
-      # No npm packages: the test drives the runner's preinstalled Google Chrome over the DevTools protocol.
+      # No npm packages are needed. The test drives the runner's preinstalled Google Chrome through the DevTools protocol.
       - name: Browser tests (headless Chrome)
         env:
           STUDYSMART_URL: http://localhost:8000
