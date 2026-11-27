@@ -1,5 +1,7 @@
 """Environment-based settings for StudySmart."""
 import os
+import sys
+import tempfile
 from pathlib import Path
 
 from django.core.exceptions import ImproperlyConfigured
@@ -113,4 +115,27 @@ DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
 REST_FRAMEWORK = {
     "DEFAULT_AUTHENTICATION_CLASSES": ["rest_framework.authentication.SessionAuthentication"],
     "DEFAULT_PERMISSION_CLASSES": ["rest_framework.permissions.DjangoModelPermissionsOrAnonReadOnly"],
+    # Anonymous visitors: any request; logged-in users: writes only (see spaces/throttling.py).
+    "DEFAULT_THROTTLE_CLASSES": [
+        "rest_framework.throttling.AnonRateThrottle",
+        "spaces.throttling.WriteRateThrottle",
+    ],
+    # Generous enough for normal map use (a few requests per search) and the browser tests.
+    "DEFAULT_THROTTLE_RATES": {"anon": "300/min", "write": "60/min"},
+    # Nginx is the one proxy in front of Django, so the client's own address is the last
+    # entry it adds to X-Forwarded-For; without this every visitor would share Nginx's address.
+    "NUM_PROXIES": 1,
+}
+
+# Throttle counters live in Django's cache. Gunicorn runs three worker processes, and a
+# per-process memory cache would count each visitor's requests separately in each one, so
+# the counters use a file cache inside the container that all workers share.
+# The test run uses a dummy cache (nothing is stored, so nothing is throttled) so tests
+# stay independent of each other; the throttling tests switch to a memory cache explicitly.
+TESTING = len(sys.argv) > 1 and sys.argv[1] == "test"
+CACHES = {
+    "default": {"BACKEND": "django.core.cache.backends.dummy.DummyCache"} if TESTING else {
+        "BACKEND": "django.core.cache.backends.filebased.FileBasedCache",
+        "LOCATION": os.path.join(tempfile.gettempdir(), "studysmart-cache"),
+    },
 }

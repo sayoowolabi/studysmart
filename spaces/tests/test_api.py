@@ -1,11 +1,17 @@
 """REST API tests use fictional records and a separate PostGIS test database."""
+from unittest import mock
+
 from django.contrib.auth import get_user_model
 from django.contrib.auth.models import Permission
 from django.contrib.gis.geos import Point
+from django.core.cache import cache
+from django.test import override_settings
 from django.urls import reverse
 from rest_framework.test import APIClient, APITestCase
+from rest_framework.throttling import SimpleRateThrottle
 
 from spaces.models import FACILITY_FIELDS, StudySpace
+from spaces.pagination import StudySpacePagination
 
 LIST_URL = reverse("spaces:studyspace-list")
 
@@ -57,7 +63,7 @@ class ReadTests(APITestBase):
         space = make_space()
         response = self.client.get(LIST_URL)
         self.assertEqual(response.status_code, 200)
-        self.assertEqual(len(response.data), 1)
+        self.assertEqual(response.data["count"], 1)
         self.assertEqual(self.client.get(detail_url(space)).status_code, 200)
         missing = reverse("spaces:studyspace-detail", args=[999999])
         self.assertEqual(self.client.get(missing).status_code, 404)
@@ -83,7 +89,7 @@ class FilterTests(APITestBase):
     def list_names(self, query):
         response = self.client.get(LIST_URL + query)
         self.assertEqual(response.status_code, 200, response.data)
-        return sorted(item["name"] for item in response.data)
+        return sorted(item["name"] for item in response.data["results"])
 
     def test_type_filter(self):
         self.assertEqual(self.list_names("?type=library"), ["Seated Library"])
@@ -299,3 +305,83 @@ class EditorErrorTests(APITestBase):
         self.assertEqual(response.status_code, 400)
         self.assertIn("detail", response.data)
         self.assertFalse(StudySpace.objects.exists())
+
+
+class PaginationTests(APITestBase):
+    def setUp(self):
+        for name in ("Fictional A", "Fictional B", "Fictional C"):
+            make_space(name=name)
+
+    def test_list_is_paginated_in_name_order(self):
+        first = self.client.get(LIST_URL + "?page_size=2").data
+        self.assertEqual(first["count"], 3)
+        self.assertEqual([item["name"] for item in first["results"]], ["Fictional A", "Fictional B"])
+        self.assertIsNone(first["previous"])
+        second = self.client.get(first["next"]).data
+        self.assertEqual([item["name"] for item in second["results"]], ["Fictional C"])
+        self.assertIsNone(second["next"])
+
+    def test_default_page_size_is_100(self):
+        StudySpace.objects.bulk_create(
+            StudySpace(name=f"Fictional Bulk {n:03}", space_type="cafe", source_id=f"bulk-{n}",
+                       location=Point(-6.26, 53.35, srid=4326))
+            for n in range(100)
+        )
+        response = self.client.get(LIST_URL)
+        self.assertEqual(response.data["count"], 103)
+        self.assertEqual(len(response.data["results"]), 100)
+
+    def test_page_size_is_capped(self):
+        with mock.patch.object(StudySpacePagination, "max_page_size", 2):
+            response = self.client.get(LIST_URL + "?page_size=500")
+        self.assertEqual(len(response.data["results"]), 2)
+
+    def test_page_past_the_end_returns_404(self):
+        response = self.client.get(LIST_URL + "?page=99")
+        self.assertEqual(response.status_code, 404)
+        self.assertIn("detail", response.data)
+
+    def test_filters_apply_before_pagination(self):
+        make_space(name="Fictional Library", space_type="library")
+        response = self.client.get(LIST_URL + "?type=library&page_size=1")
+        self.assertEqual(response.data["count"], 1)
+        self.assertEqual(response.data["results"][0]["name"], "Fictional Library")
+
+    def test_search_endpoints_are_not_paginated(self):
+        response = self.client.get(reverse("spaces:studyspace-nearby") + "?lat=53.35&lng=-6.26&radius=500")
+        self.assertIsInstance(response.data, list)
+        self.assertEqual(len(response.data), 3)
+
+
+# Tests normally run with a dummy cache, which never throttles; these use a real memory cache.
+@override_settings(CACHES={"default": {"BACKEND": "django.core.cache.backends.locmem.LocMemCache"}})
+class ThrottleTests(APITestBase):
+    def setUp(self):
+        cache.clear()
+        self.rates = mock.patch.dict(SimpleRateThrottle.THROTTLE_RATES, {"anon": "2/min", "write": "1/min"})
+        self.rates.start()
+        self.addCleanup(self.rates.stop)
+
+    def test_anonymous_requests_over_the_limit_get_429(self):
+        for _ in range(2):
+            self.assertEqual(self.client.get(LIST_URL).status_code, 200)
+        response = self.client.get(LIST_URL)
+        self.assertEqual(response.status_code, 429)
+        self.assertIn("detail", response.data)
+        self.assertIn("Retry-After", response.headers)
+
+    def test_each_visitor_behind_the_proxy_has_their_own_limit(self):
+        # Nginx adds the visitor's address to X-Forwarded-For; NUM_PROXIES=1 makes DRF use it.
+        for _ in range(2):
+            self.client.get(LIST_URL, HTTP_X_FORWARDED_FOR="203.0.113.1")
+        self.assertEqual(self.client.get(LIST_URL, HTTP_X_FORWARDED_FOR="203.0.113.1").status_code, 429)
+        self.assertEqual(self.client.get(LIST_URL, HTTP_X_FORWARDED_FOR="203.0.113.2").status_code, 200)
+
+    def test_logged_in_writes_are_limited_but_reads_are_not(self):
+        self.login_as_editor()
+        for _ in range(4):
+            self.assertEqual(self.client.get(LIST_URL).status_code, 200)
+        self.assertEqual(self.client.post(LIST_URL, valid_payload(), format="json").status_code, 201)
+        response = self.client.post(LIST_URL, valid_payload(name="Fictional Second"), format="json")
+        self.assertEqual(response.status_code, 429)
+        self.assertEqual(StudySpace.objects.count(), 1)

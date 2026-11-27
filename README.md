@@ -213,7 +213,7 @@ Single-quote values in `.env` that contain `$` or `#`. Do not share the generate
 
 | Suite | Size | Command |
 | --- | --- | --- |
-| Django tests (models, API, permissions, spatial queries, imports, settings, page) against a separate PostGIS test database | 155 tests | `docker compose exec web /usr/local/bin/python manage.py test spaces` |
+| Django tests (models, API, permissions, spatial queries, imports, settings, page) against a separate PostGIS test database | 164 tests | `docker compose exec web /usr/local/bin/python manage.py test spaces` |
 | Browser tests of the map page (needs Node 22+ and Chrome, Chromium or Edge; the app running with data imported) | 50 checks | `node frontend-tests/map-ui.test.mjs` |
 | System and migration checks | | `docker compose exec web /usr/local/bin/python manage.py check` and `… makemigrations --check --dry-run` |
 
@@ -264,10 +264,10 @@ The exact snapshots used are committed in `data/raw/` with SHA-256 checksums, re
 - Facility counts on the filters reflect the moment the page loaded.
 - Choosing an arbitrary map point needs a pointer or touch; keyboard users can choose a campus, their location or a marker.
 - Geolocation needs a secure origin, so it works on `localhost` but not when the site is opened from another device over plain HTTP.
-- The API is not paginated (657 records) and has no rate limiting.
+- Rate limits are counted per client address, so several people behind one shared network address (for example campus Wi-Fi) share one limit of 300 requests per minute.
 - The local setup is served over plain HTTP on `localhost`; see [Deployment beyond local development](#deployment-beyond-local-development).
 
-**Possible improvements:** facility reports from users with moderation; opening hours from OpenStreetMap; wider coverage beyond Dublin City Council; a geography column or projected index for index-assisted radius searches at larger scale; pagination; and a production deployment as outlined in [docs/deployment.md](docs/deployment.md#production-and-cloud-deployment).
+**Possible improvements:** facility reports from users with moderation; opening hours from OpenStreetMap; wider coverage beyond Dublin City Council; a geography column or projected index for index-assisted radius searches at larger scale; and a production deployment as outlined in [docs/deployment.md](docs/deployment.md#production-and-cloud-deployment).
 
 ## Troubleshooting
 
